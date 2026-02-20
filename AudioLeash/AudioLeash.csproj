@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -23,12 +23,6 @@
     <None Update="Resources\icon.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- AudioSwitcherContext.cs is being rewritten as part of the NAudio migration;
-         excluded here so the project compiles during the transition. -->
-    <Compile Remove="AudioSwitcherContext.cs" />
   </ItemGroup>
 
 </Project>

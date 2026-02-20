@@ -1,343 +1,331 @@
+﻿#nullable enable
 using System;
 using System.Drawing;
 using System.Linq;
 using System.Reflection;
 using System.Windows.Forms;
-using System.Reactive.Linq;
-using AudioSwitcher.AudioApi;
-using AudioSwitcher.AudioApi.CoreAudio;
+using NAudio.CoreAudioApi;
+using NAudio.CoreAudioApi.Interfaces;
 
-namespace AudioLeash
+namespace AudioLeash;
+
+/// <summary>
+/// Application context that manages the system tray icon and audio device switching.
+/// Runs without a visible window entirely through the notification area.
+/// </summary>
+public sealed class AudioLeashContext : ApplicationContext
 {
-    /// <summary>
-    /// Application context that manages the system tray icon and audio device switching.
-    /// Runs without a visible window — entirely through the notification area.
-    /// </summary>
-    public class AudioSwitcherContext : ApplicationContext
+    private readonly NotifyIcon           _trayIcon;
+    private readonly ContextMenuStrip     _contextMenu;
+    private readonly MMDeviceEnumerator   _enumerator;
+    private readonly PolicyConfigClient   _policyConfig;
+    private readonly DeviceSelectionState _selection;
+    private readonly AudioNotificationClient _notificationClient;
+
+    public AudioLeashContext()
     {
-        // ─── Fields ───────────────────────────────────────────────────────────────
+        _enumerator   = new MMDeviceEnumerator();
+        _policyConfig = new PolicyConfigClient();
+        _selection    = new DeviceSelectionState();
+        _contextMenu  = new ContextMenuStrip();
 
-        private NotifyIcon       trayIcon      = null!;
-        private ContextMenuStrip contextMenu   = null!;
-        private CoreAudioController audioController = null!;
-
-        /// <summary>ID of the device the user explicitly selected via the menu.</summary>
-        private Guid? selectedDeviceId;
-
-        /// <summary>
-        /// Prevents the AudioDeviceChanged handler from re-triggering when the app
-        /// itself switches the default device.
-        /// </summary>
-        private bool isInternalChange;
-
-        // ─── Constructor ──────────────────────────────────────────────────────────
-
-        public AudioSwitcherContext()
+        _trayIcon = new NotifyIcon
         {
-            InitializeAudioController();
-            InitializeTrayIcon();
+            Icon             = GetTrayIcon(),
+            ContextMenuStrip = _contextMenu,
+            Text             = "AudioLeash",
+            Visible          = true,
+        };
+        _trayIcon.MouseClick += TrayIcon_MouseClick;
 
-            // Seed selection with whatever Windows currently uses as default
-            var currentDefault = audioController.DefaultPlaybackDevice;
-            if (currentDefault != null)
-                selectedDeviceId = currentDefault.Id;
+        // Register for device-change notifications.
+        // IMPORTANT: _notificationClient must be a class field, not a local variable.
+        // If the GC collects it while Windows holds a native COM pointer the process
+        // will crash with ExecutionEngineException. (NAudio issue #849)
+        _notificationClient = new AudioNotificationClient(OnDefaultDeviceChanged);
+        _enumerator.RegisterEndpointNotificationCallback(_notificationClient);
 
-            RefreshDeviceList();
+        // Seed the selection with whatever Windows currently uses as the default.
+        using var defaultDevice = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+        if (defaultDevice is not null)
+            _selection.SelectDevice(defaultDevice.ID);
+
+        RefreshDeviceList();
+    }
+
+    private void TrayIcon_MouseClick(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left) return;
+
+        RefreshDeviceList();
+
+        // WinForms only shows the context menu automatically on right-click;
+        // invoke it manually for left-click via reflection.
+        typeof(NotifyIcon)
+            .GetMethod("ShowContextMenu", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?.Invoke(_trayIcon, null);
+    }
+
+    /// <summary>
+    /// Rebuilds the context menu with the current list of active playback devices.
+    /// Called on every left-click and after any device switch.
+    /// </summary>
+    private void RefreshDeviceList()
+    {
+        foreach (ToolStripItem item in _contextMenu.Items)
+        {
+            if (item is ToolStripMenuItem { Tag: MMDevice d })
+                d.Dispose();
         }
+        _contextMenu.Items.Clear();
 
-        // ─── Initialization ───────────────────────────────────────────────────────
+        var devices = _enumerator
+            .EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
+            .OrderBy(d => d.FriendlyName)
+            .ToList();
 
-        private void InitializeAudioController()
+        // Seed the selection with whatever Windows currently uses as the default.
+        using var defaultDevice = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+        string? defaultId = defaultDevice?.ID;
+
+        if (devices.Count == 0)
         {
-            audioController = new CoreAudioController();
-
-            // Subscribe to all audio device change events (Rx observable)
-            audioController.AudioDeviceChanged.Subscribe(OnAudioDeviceChanged);
+            _contextMenu.Items.Add(new ToolStripMenuItem("No devices available") { Enabled = false });
         }
-
-        private void InitializeTrayIcon()
+        else
         {
-            contextMenu = new ContextMenuStrip();
-
-            trayIcon = new NotifyIcon
+            foreach (var device in devices)
             {
-                Icon             = GetTrayIcon(),
-                ContextMenuStrip = contextMenu,
-                Text             = "AudioLeash",
-                Visible          = true
-            };
+                bool isUserSelected   = _selection.SelectedDeviceId == device.ID;
+                bool isWindowsDefault = defaultId == device.ID;
 
-            // Left-click opens the same context menu as right-click
-            trayIcon.MouseClick += TrayIcon_MouseClick;
-        }
+                string label = device.FriendlyName;
+                if (isWindowsDefault && !isUserSelected)
+                    label += "  (Windows default)";
 
-        /// <summary>
-        /// Returns a usable icon: tries to load a custom icon from the Resources
-        /// folder, falls back to the standard application icon if not found.
-        /// </summary>
-        private static Icon GetTrayIcon()
-        {
-            try
-            {
-                string iconPath = System.IO.Path.Combine(
-                    AppContext.BaseDirectory, "Resources", "icon.ico");
-
-                if (System.IO.File.Exists(iconPath))
-                    return new Icon(iconPath);
-            }
-            catch { /* fall through */ }
-
-            return SystemIcons.Application;
-        }
-
-        // ─── Tray Icon Events ─────────────────────────────────────────────────────
-
-        private void TrayIcon_MouseClick(object? sender, MouseEventArgs e)
-        {
-            if (e.Button == MouseButtons.Left)
-            {
-                // Rebuild list so newly connected/disconnected devices appear
-                RefreshDeviceList();
-
-                // Use reflection to trigger the context menu on left-click
-                // (WinForms only shows it automatically on right-click)
-                MethodInfo? showMenu = typeof(NotifyIcon).GetMethod(
-                    "ShowContextMenu",
-                    BindingFlags.Instance | BindingFlags.NonPublic);
-
-                showMenu?.Invoke(trayIcon, null);
-            }
-        }
-
-        // ─── Device List ──────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Rebuilds the context menu with the current list of active playback devices.
-        /// Called on every left-click and after any device switch.
-        /// </summary>
-        private void RefreshDeviceList()
-        {
-            contextMenu.Items.Clear();
-
-            var playbackDevices = audioController.GetPlaybackDevices()
-                .Where(d => d.State == DeviceState.Active)
-                .OrderBy(d => d.FullName)
-                .ToList();
-
-            var defaultDevice = audioController.DefaultPlaybackDevice;
-
-            if (playbackDevices.Count == 0)
-            {
-                contextMenu.Items.Add(new ToolStripMenuItem("No devices available") { Enabled = false });
-            }
-            else
-            {
-                foreach (var device in playbackDevices)
+                var menuItem = new ToolStripMenuItem(label)
                 {
-                    bool isUserSelected  = selectedDeviceId.HasValue && selectedDeviceId.Value == device.Id;
-                    bool isWindowsDefault = defaultDevice?.Id == device.Id;
-
-                    // Build display name:
-                    //   ✔ = user-selected  |  (Windows default) = currently active in OS but not user-selected
-                    string label = device.FullName;
-                    if (isWindowsDefault && !isUserSelected)
-                        label += "  (Windows default)";
-
-                    var menuItem = new ToolStripMenuItem(label)
-                    {
-                        Tag     = device,
-                        Checked = isUserSelected   // checkmark tracks user selection
-                    };
-
-                    menuItem.Click += DeviceMenuItem_Click;
-                    contextMenu.Items.Add(menuItem);
-                }
-            }
-
-            contextMenu.Items.Add(new ToolStripSeparator());
-
-            // "Clear Selection" disables auto-restore and lets Windows manage the default freely
-            var clearItem = new ToolStripMenuItem("Clear Selection  (disable auto-restore)")
-            {
-                Enabled = selectedDeviceId.HasValue
-            };
-            clearItem.Click += ClearSelection_Click;
-            contextMenu.Items.Add(clearItem);
-
-            var refreshItem = new ToolStripMenuItem("Refresh List");
-            refreshItem.Click += (_, _) => RefreshDeviceList();
-            contextMenu.Items.Add(refreshItem);
-
-            contextMenu.Items.Add(new ToolStripSeparator());
-
-            var exitItem = new ToolStripMenuItem("Exit");
-            exitItem.Click += Exit_Click;
-            contextMenu.Items.Add(exitItem);
-        }
-
-        // ─── Device Selection ─────────────────────────────────────────────────────
-
-        private async void DeviceMenuItem_Click(object? sender, EventArgs e)
-        {
-            if (sender is not ToolStripMenuItem { Tag: CoreAudioDevice device })
-                return;
-
-            try
-            {
-                isInternalChange = true;
-                await device.SetAsDefaultAsync();
-                selectedDeviceId = device.Id;
-
-                trayIcon.ShowBalloonTip(
-                    timeout: 2500,
-                    tipTitle: "Audio Device Selected",
-                    tipText: $"Default output: {device.FullName}\n\nAuto-restore is now active.",
-                    tipIcon: ToolTipIcon.Info);
-
-                RefreshDeviceList();
-            }
-            catch (Exception ex)
-            {
-                ShowError($"Could not set device:\n{ex.Message}");
-            }
-            finally
-            {
-                isInternalChange = false;
+                    Tag     = device,
+                    Checked = isUserSelected,
+                };
+                menuItem.Click += DeviceMenuItem_Click;
+                _contextMenu.Items.Add(menuItem);
             }
         }
 
-        private void ClearSelection_Click(object? sender, EventArgs e)
-        {
-            selectedDeviceId = null;
+        _contextMenu.Items.Add(new ToolStripSeparator());
 
-            trayIcon.ShowBalloonTip(
-                timeout: 2500,
-                tipTitle: "Selection Cleared",
-                tipText: "Auto-restore disabled. Select a device to re-enable.",
-                tipIcon: ToolTipIcon.Info);
+        var clearItem = new ToolStripMenuItem("Clear Selection  (disable auto-restore)")
+        {
+            Enabled = _selection.SelectedDeviceId is not null,
+        };
+        clearItem.Click += ClearSelection_Click;
+        _contextMenu.Items.Add(clearItem);
+
+        var refreshItem = new ToolStripMenuItem("Refresh List");
+        refreshItem.Click += (_, _) => RefreshDeviceList();
+        _contextMenu.Items.Add(refreshItem);
+
+        _contextMenu.Items.Add(new ToolStripSeparator());
+
+        var exitItem = new ToolStripMenuItem("Exit");
+        exitItem.Click += Exit_Click;
+        _contextMenu.Items.Add(exitItem);
+    }
+
+    private async void DeviceMenuItem_Click(object? sender, EventArgs e)
+    {
+        if (sender is not ToolStripMenuItem { Tag: MMDevice device })
+            return;
+
+        try
+        {
+            _selection.IsInternalChange = true;
+
+            string deviceId   = device.ID;
+            string deviceName = device.FriendlyName;
+            await System.Threading.Tasks.Task.Run(() => _policyConfig.SetDefaultEndpoint(deviceId));
+
+            _selection.SelectDevice(deviceId);
+
+            _trayIcon.ShowBalloonTip(
+                timeout:  2500,
+                tipTitle: "Audio Device Selected",
+                tipText:  $"Default output: {deviceName}\n\nAuto-restore is now active.",
+                tipIcon:  ToolTipIcon.Info);
 
             RefreshDeviceList();
         }
-
-        // ─── Device Change Monitoring ─────────────────────────────────────────────
-
-        /// <summary>
-        /// Fired by the AudioSwitcher Rx observable whenever any audio device event occurs.
-        /// Restores the user-selected device if Windows changes the default externally.
-        /// </summary>
-        private async void OnAudioDeviceChanged(DeviceChangedArgs args)
+        catch (Exception ex)
         {
-            // We only care when Windows changes which device is the default
-            if (args.ChangedType != DeviceChangedType.DefaultChanged)
+            ShowError($"Could not set device:\n{ex.Message}");
+        }
+        finally
+        {
+            _selection.IsInternalChange = false;
+        }
+    }
+
+    private void ClearSelection_Click(object? sender, EventArgs e)
+    {
+        _selection.ClearSelection();
+
+        _trayIcon.ShowBalloonTip(
+            timeout:  2500,
+            tipTitle: "Selection Cleared",
+            tipText:  "Auto-restore disabled. Select a device to re-enable.",
+            tipIcon:  ToolTipIcon.Info);
+
+        RefreshDeviceList();
+    }
+
+    /// <summary>
+    /// Called by <see cref="AudioNotificationClient"/> on a Windows audio thread
+    /// when the system default playback device changes.
+    /// </summary>
+    private void OnDefaultDeviceChanged(string newDefaultId)
+    {
+        bool isSelectedAvailable = _selection.SelectedDeviceId is not null
+            && _enumerator
+                .EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
+                .Any(d => d.ID == _selection.SelectedDeviceId);
+
+        var decision = _selection.EvaluateDefaultChange(newDefaultId, isSelectedAvailable);
+
+        switch (decision)
+        {
+            case RestoreDecision.NoAction:
                 return;
 
-            // Ignore events we triggered ourselves to avoid feedback loops
-            if (isInternalChange)
-                return;
-
-            // Nothing to restore if no device has been explicitly selected
-            if (!selectedDeviceId.HasValue)
-                return;
-
-            var newDefault = audioController.DefaultPlaybackDevice;
-
-            // Already on the right device — nothing to do
-            if (newDefault?.Id == selectedDeviceId.Value)
-                return;
-
-            // Check whether the selected device is still present and active
-            var selectedDevice = audioController.GetPlaybackDevices()
-                .FirstOrDefault(d => d.Id == selectedDeviceId.Value
-                                  && d.State == DeviceState.Active);
-
-            if (selectedDevice == null)
-            {
-                // Device disappeared (unplugged etc.) — clear selection gracefully
-                selectedDeviceId = null;
-
+            case RestoreDecision.ClearSelection:
+                _selection.ClearSelection();
                 SafeInvoke(() =>
                 {
-                    trayIcon.ShowBalloonTip(
-                        timeout: 3000,
+                    _trayIcon.ShowBalloonTip(
+                        timeout:  3000,
                         tipTitle: "Audio Device Unavailable",
-                        tipText: "Your selected device is no longer available. Selection cleared.",
-                        tipIcon: ToolTipIcon.Warning);
-
+                        tipText:  "Your selected device is no longer available. Selection cleared.",
+                        tipIcon:  ToolTipIcon.Warning);
                     RefreshDeviceList();
                 });
+                break;
 
-                return;
-            }
-
-            // Restore the user's chosen device
-            try
-            {
-                isInternalChange = true;
-                await selectedDevice.SetAsDefaultAsync();
-
-                SafeInvoke(() =>
+            case RestoreDecision.Restore:
+                try
                 {
-                    trayIcon.ShowBalloonTip(
-                        timeout: 3000,
-                        tipTitle: "Audio Device Restored",
-                        tipText: $"Switched back to: {selectedDevice.FullName}",
-                        tipIcon: ToolTipIcon.Info);
+                    _selection.IsInternalChange = true;
+                    string restoreId = _selection.SelectedDeviceId!;
+                    _policyConfig.SetDefaultEndpoint(restoreId);
 
-                    RefreshDeviceList();
-                });
-            }
-            catch (Exception ex)
-            {
-                SafeInvoke(() =>
+                    string restoredName = _enumerator
+                        .EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
+                        .FirstOrDefault(d => d.ID == restoreId)
+                        ?.FriendlyName ?? restoreId;
+
+                    SafeInvoke(() =>
+                    {
+                        _trayIcon.ShowBalloonTip(
+                            timeout:  3000,
+                            tipTitle: "Audio Device Restored",
+                            tipText:  $"Switched back to: {restoredName}",
+                            tipIcon:  ToolTipIcon.Info);
+                        RefreshDeviceList();
+                    });
+                }
+                catch (Exception ex)
                 {
-                    trayIcon.ShowBalloonTip(
-                        timeout: 3000,
-                        tipTitle: "Restore Failed",
-                        tipText: $"Could not restore audio device:\n{ex.Message}",
-                        tipIcon: ToolTipIcon.Error);
-                });
-            }
-            finally
+                    SafeInvoke(() =>
+                    {
+                        _trayIcon.ShowBalloonTip(
+                            timeout:  3000,
+                            tipTitle: "Restore Failed",
+                            tipText:  $"Could not restore audio device:\n{ex.Message}",
+                            tipIcon:  ToolTipIcon.Error);
+                    });
+                }
+                finally
+                {
+                    _selection.IsInternalChange = false;
+                }
+                break;
+        }
+    }
+
+    private void SafeInvoke(Action action)
+    {
+        if (_contextMenu.InvokeRequired)
+            _contextMenu.Invoke(action);
+        else
+            action();
+    }
+
+    private static void ShowError(string message) =>
+        MessageBox.Show(message, "AudioLeash", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+    private static Icon GetTrayIcon()
+    {
+        try
+        {
+            string iconPath = System.IO.Path.Combine(
+                AppContext.BaseDirectory, "Resources", "icon.ico");
+            if (System.IO.File.Exists(iconPath))
+                return new Icon(iconPath);
+        }
+        catch { /* fall through to default */ }
+        return SystemIcons.Application;
+    }
+
+    private void Exit_Click(object? sender, EventArgs e)
+    {
+        _trayIcon.Visible = false;
+        Application.Exit();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _enumerator.UnregisterEndpointNotificationCallback(_notificationClient);
+
+            foreach (ToolStripItem item in _contextMenu.Items)
             {
-                isInternalChange = false;
+                if (item is ToolStripMenuItem { Tag: MMDevice d })
+                    d.Dispose();
             }
+
+            _trayIcon.Dispose();
+            _contextMenu.Dispose();
+            _enumerator.Dispose();
         }
+        base.Dispose(disposing);
+    }
 
-        // ─── Helpers ──────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Receives Windows audio endpoint change notifications.
+    /// Must be kept alive as a class field -- not a local variable -- to prevent
+    /// the GC from collecting it while Windows holds a native COM pointer to it.
+    /// (NAudio issue #849: ExecutionEngineException on GC collection)
+    /// </summary>
+    private sealed class AudioNotificationClient : IMMNotificationClient
+    {
+        private readonly Action<string> _onDefaultChanged;
 
-        /// <summary>
-        /// Marshals an action back to the UI thread if required.
-        /// The AudioDeviceChanged event may arrive on a background/Rx thread.
-        /// </summary>
-        private void SafeInvoke(Action action)
+        internal AudioNotificationClient(Action<string> onDefaultChanged)
+            => _onDefaultChanged = onDefaultChanged;
+
+        public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)
         {
-            if (contextMenu.InvokeRequired)
-                contextMenu.Invoke(action);
-            else
-                action();
+            // Only react to playback default changing for Multimedia role.
+            // Windows fires this for Console, Multimedia, and Communications separately --
+            // filtering to Multimedia prevents triple-firing.
+            if (flow == DataFlow.Render && role == Role.Multimedia)
+                _onDefaultChanged(defaultDeviceId);
         }
 
-        private static void ShowError(string message) =>
-            MessageBox.Show(message, "AudioLeash",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
-
-        // ─── Exit ─────────────────────────────────────────────────────────────────
-
-        private void Exit_Click(object? sender, EventArgs e)
-        {
-            trayIcon.Visible = false;
-            Application.Exit();
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                trayIcon?.Dispose();
-                contextMenu?.Dispose();
-                audioController?.Dispose();
-            }
-            base.Dispose(disposing);
-        }
+        // Required by IMMNotificationClient; AudioLeash does not act on these.
+        public void OnDeviceAdded(string pwstrDeviceId) { }
+        public void OnDeviceRemoved(string deviceId) { }
+        public void OnDeviceStateChanged(string deviceId, DeviceState newState) { }
+        public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key) { }
     }
 }
