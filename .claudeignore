@@ -1,0 +1,17 @@
+# Git internals
+.git/
+
+# .NET build artifacts
+**/bin/
+**/obj/
+
+# Visual Studio IDE state
+.vs/
+**/*.user
+**/*.suo
+
+# Test run output
+**/TestResults/
+
+# Binary assets
+**/Resources/*.ico

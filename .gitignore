@@ -1,0 +1,46 @@
+# .NET build artifacts
+**/bin/
+**/obj/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.fragment.lock.json
+
+# Publish output
+**/[Pp]ublish/
+**/[Pp]ublication/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.rsuser
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# Test results & coverage
+**/TestResults/
+*.coverage
+*.coveragexml
+**/coverage*/
+*.opencover.xml
+
+# Log files
+*.log
+
+# Windows OS artifacts
+Thumbs.db
+desktop.ini
+
+# macOS OS artifacts (if any contributors use Mac for editing)
+.DS_Store
