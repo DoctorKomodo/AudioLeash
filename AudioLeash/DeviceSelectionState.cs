@@ -16,11 +16,18 @@ internal sealed class DeviceSelectionState
     /// <summary>ID of the device the user has explicitly selected.</summary>
     public string? SelectedDeviceId { get; private set; }
 
+    private volatile bool _isInternalChange;
+
     /// <summary>
     /// Set to <c>true</c> while the app itself is switching the default device,
     /// to prevent the change-notification handler from triggering a feedback loop.
+    /// Written from the UI thread (menu click) and the Windows audio thread (restore path).
     /// </summary>
-    public bool IsInternalChange { get; set; }
+    public bool IsInternalChange
+    {
+        get => _isInternalChange;
+        set => _isInternalChange = value;
+    }
 
     public void SelectDevice(string deviceId) => SelectedDeviceId = deviceId;
 
