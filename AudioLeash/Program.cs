@@ -9,9 +9,7 @@ namespace AudioLeash
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-
-            // TODO: Run(new AudioLeashContext()) once AudioLeashContext is implemented
-            // as part of the NAudio migration (Task 4+).
+            Application.Run(new AudioLeashContext());
         }
     }
 }
