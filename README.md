@@ -1,4 +1,4 @@
-# AudioLeash
+﻿# AudioLeash
 
 Keeps Windows on a leash — a lightweight system tray app that stops Windows from switching your audio output without permission, and snaps it back when it tries.
 
@@ -28,7 +28,7 @@ No window appears — the app lives entirely in the system notification area (tr
 ### NuGet Dependencies
 | Package | Purpose |
 |---|---|
-| `AudioSwitcher.AudioApi.CoreAudio` 3.1.0 | Device enumeration, default-device switching, change events |
+| `NAudio.Wasapi` 2.2.1 | Device enumeration, change events (`IMMNotificationClient`) |
 
 ---
 
@@ -97,8 +97,10 @@ AudioLeash/
 ├── AudioLeash.sln
 └── AudioLeash/
     ├── AudioLeash.csproj
-    ├── Program.cs               ← Entry point; runs AudioSwitcherContext
-    ├── AudioSwitcherContext.cs  ← All application logic
+    ├── Program.cs               ← Entry point; runs AudioLeashContext
+    ├── AudioSwitcherContext.cs  ← All application logic (AudioLeashContext class)
+    ├── DeviceSelectionState.cs  ← Pure selection state machine (unit-testable)
+    ├── PolicyConfigClient.cs    ← COM interop: sets Windows default audio endpoint
     └── Resources/
         └── icon.ico             ← (optional) custom tray icon
 ```
@@ -117,4 +119,4 @@ AudioLeash/
 - **Tooltip on hover** — Show the currently selected device name in the tray icon tooltip.
 - **Dark/light theme icon** — Switch icon variant based on Windows theme.
 - **Volume indicator** — Show or control master volume from the tray menu.
-- **Migrate off AudioSwitcher** — Replace the unmaintained `AudioSwitcher.AudioApi.CoreAudio` package (last stable May 2023, no .NET 8 explicit target, open constructor-failure reports as of June 2025) with `NAudio.Wasapi` for device enumeration/events and a self-contained `PolicyConfigClient.cs` (~150 lines of COM interop) for `SetDefaultEndpoint`. Reference implementation: SoundSwitch. Preserves all current behaviour; removes the unmaintained dependency.
+
