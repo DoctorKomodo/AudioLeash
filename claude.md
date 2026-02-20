@@ -216,3 +216,4 @@ The following are tracked ideas from the README. Reference this list when scopin
 - Tray icon tooltip showing selected device name
 - Dark/light theme icon variants
 - Volume indicator / master volume control from tray
+- Migrate off `AudioSwitcher.AudioApi.CoreAudio` → NAudio + custom `PolicyConfigClient.cs` COM interop (see README for rationale)
