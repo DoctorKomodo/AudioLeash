@@ -28,6 +28,10 @@ project.fragment.lock.json
 # VS Code
 .vscode/
 
+# Claude Code (local-only settings; project-level settings.json is intentionally excluded too
+# since preferences are personal — add .claude/settings.json here if you want to share them)
+.claude/
+
 # Test results & coverage
 **/TestResults/
 *.coverage
