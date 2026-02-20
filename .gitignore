@@ -48,3 +48,6 @@ desktop.ini
 
 # macOS OS artifacts (if any contributors use Mac for editing)
 .DS_Store
+
+# Git worktrees
+.worktrees/
