@@ -117,3 +117,4 @@ AudioLeash/
 - **Tooltip on hover** — Show the currently selected device name in the tray icon tooltip.
 - **Dark/light theme icon** — Switch icon variant based on Windows theme.
 - **Volume indicator** — Show or control master volume from the tray menu.
+- **Migrate off AudioSwitcher** — Replace the unmaintained `AudioSwitcher.AudioApi.CoreAudio` package (last stable May 2023, no .NET 8 explicit target, open constructor-failure reports as of June 2025) with `NAudio.Wasapi` for device enumeration/events and a self-contained `PolicyConfigClient.cs` (~150 lines of COM interop) for `SetDefaultEndpoint`. Reference implementation: SoundSwitch. Preserves all current behaviour; removes the unmaintained dependency.
