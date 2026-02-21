@@ -28,7 +28,7 @@ The application runs headlessly — no main window — and lives entirely in the
 ```
 AudioLeash/
 ├── AudioLeash.sln
-├── claude.md                    ← this file
+├── CLAUDE.md                    ← this file
 ├── README.md
 └── AudioLeash/
     ├── AudioLeash.csproj
@@ -36,8 +36,10 @@ AudioLeash/
     ├── AudioLeashContext.cs     ← All application logic (tray, menu, device events)
     ├── DeviceSelectionState.cs  ← Pure selection state machine (unit-testable)
     ├── PolicyConfigClient.cs    ← COM interop: sets Windows default audio endpoint
+    ├── SettingsService.cs       ← JSON settings persistence (%AppData%\AudioLeash\)
+    ├── StartupService.cs        ← Windows Run-key startup registration
     └── Resources/
-        └── icon.ico             ← (optional) custom tray icon
+        └── icon.ico             ← tray icon
 ```
 
 ## Key Design Constraints
@@ -45,7 +47,7 @@ AudioLeash/
 - Core logic lives in `AudioLeashContext.cs`. `DeviceSelectionState.cs` and `PolicyConfigClient.cs` are intentional splits: the former enables unit testing of pure logic; the latter isolates COM interop infrastructure.
 - All UI interactions must occur on the **UI/STA thread**. `IMMNotificationClient` callbacks arrive on a Windows COM audio thread and must be marshalled via `Control.Invoke` (see `SafeInvoke` in `AudioLeashContext`).
 - `DeviceSelectionState.IsInternalChange` (volatile) prevents feedback loops when the app itself triggers a device change.
-- No settings are persisted to disk or registry today — selected device is in-memory only.
+- The user-selected device is persisted to `%AppData%\AudioLeash\settings.json` via `SettingsService` and restored on startup.
 
 ---
 
@@ -208,13 +210,11 @@ dotnet publish AudioLeash/AudioLeash.csproj -c Release -r win-x64 --self-contain
 
 The following are tracked ideas from the README. Reference this list when scoping new tasks — do not implement features from this list unless explicitly requested:
 
-- Windows startup registration (registry `Run` key)
 - Global hotkey to cycle audio devices
 - "Default communications device" support alongside playback device
 - Recording/microphone device support
 - Named profiles (switch playback + recording together)
 - Per-application audio routing (Windows 10+)
-- Settings persistence (JSON file or registry)
 - Tray icon tooltip showing selected device name
 - Dark/light theme icon variants
 - Volume indicator / master volume control from tray
