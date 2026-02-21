@@ -25,6 +25,25 @@ AudioLeash\bin\Release\net8.0-windows\AudioLeash.exe
 
 No window appears — the app lives entirely in the system notification area (tray).
 
+### Build the Installer
+
+Produces `installer\Output\AudioLeash-Setup.exe` — a single-file Windows installer that requires no admin rights.
+
+**Prerequisites (one-time setup):**
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8)
+- [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+
+**Run from the repo root (PowerShell):**
+```powershell
+.\build-installer.ps1
+```
+
+The installer:
+- Checks for the [.NET 8 Windows Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) and warns if it is absent
+- Installs to `%LOCALAPPDATA%\AudioLeash` (no UAC prompt)
+- Adds a Start Menu entry
+- Offers an optional "Start with Windows" checkbox (enabled by default), which pre-sets the same registry key that the tray menu's own toggle manages
+
 ### NuGet Dependencies
 | Package | Purpose |
 |---|---|
@@ -101,6 +120,9 @@ No window appears — the app lives entirely in the system notification area (tr
 ```
 AudioLeash/
 ├── AudioLeash.sln
+├── build-installer.ps1          ← Builds and packages the installer
+├── installer/
+│   └── AudioLeash.iss           ← Inno Setup script
 └── AudioLeash/
     ├── AudioLeash.csproj
     ├── Program.cs               ← Entry point; runs AudioLeashContext
