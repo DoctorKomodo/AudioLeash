@@ -133,7 +133,7 @@ public sealed class AudioLeashContext : ApplicationContext
         _contextMenu.Items.Add(exitItem);
     }
 
-    private async void DeviceMenuItem_Click(object? sender, EventArgs e)
+    private void DeviceMenuItem_Click(object? sender, EventArgs e)
     {
         if (sender is not ToolStripMenuItem { Tag: MMDevice device })
             return;
@@ -144,7 +144,7 @@ public sealed class AudioLeashContext : ApplicationContext
 
             string deviceId   = device.ID;
             string deviceName = device.FriendlyName;
-            await System.Threading.Tasks.Task.Run(() => _policyConfig.SetDefaultEndpoint(deviceId));
+            _policyConfig.SetDefaultEndpoint(deviceId);
 
             _selection.SelectDevice(deviceId);
 
@@ -185,10 +185,15 @@ public sealed class AudioLeashContext : ApplicationContext
     /// </summary>
     private void OnDefaultDeviceChanged(string newDefaultId)
     {
-        bool isSelectedAvailable = _selection.SelectedDeviceId is not null
-            && _enumerator
+        bool isSelectedAvailable = false;
+        if (_selection.SelectedDeviceId is not null)
+        {
+            var activeDevices = _enumerator
                 .EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
-                .Any(d => d.ID == _selection.SelectedDeviceId);
+                .ToList();
+            isSelectedAvailable = activeDevices.Any(d => d.ID == _selection.SelectedDeviceId);
+            foreach (var d in activeDevices) d.Dispose();
+        }
 
         var decision = _selection.EvaluateDefaultChange(newDefaultId, isSelectedAvailable);
 
@@ -217,10 +222,11 @@ public sealed class AudioLeashContext : ApplicationContext
                     string restoreId = _selection.SelectedDeviceId!;
                     _policyConfig.SetDefaultEndpoint(restoreId);
 
-                    string restoredName = _enumerator
+                    var restoreDevices = _enumerator
                         .EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
-                        .FirstOrDefault(d => d.ID == restoreId)
-                        ?.FriendlyName ?? restoreId;
+                        .ToList();
+                    string restoredName = restoreDevices.FirstOrDefault(d => d.ID == restoreId)?.FriendlyName ?? restoreId;
+                    foreach (var d in restoreDevices) d.Dispose();
 
                     SafeInvoke(() =>
                     {
