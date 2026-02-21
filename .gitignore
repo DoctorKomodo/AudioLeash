@@ -14,6 +14,9 @@ project.fragment.lock.json
 **/[Pp]ublish/
 **/[Pp]ublication/
 
+# Installer build output (produced by build-installer.ps1 + Inno Setup)
+installer/Output/
+
 # Visual Studio
 .vs/
 *.user
