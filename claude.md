@@ -138,7 +138,7 @@ This project uses the **context7 MCP integration** for resolving library documen
 use context7 to look up: <library or topic>
 ```
 
-Prefer context7 over guessing API shapes — library APIs (especially AudioSwitcher and Rx.NET) change between versions, and incorrect assumptions cause subtle bugs.
+Prefer context7 over guessing API shapes — library APIs (especially NAudio) change between versions, and incorrect assumptions cause subtle bugs.
 
 ## Web Research
 
@@ -160,7 +160,7 @@ Before starting any non-trivial implementation, consider whether a web search wo
 - Use **nullable reference types** (`#nullable enable`) — all new code must be null-safe.
 - Prefer `async/await` over raw `Task.Run` + callbacks where it improves readability.
 - Use `using` declarations (C# 8+) rather than `using` blocks unless scope control is needed.
-- Dispose all `IDisposable` objects — especially `CoreAudioController`, `NotifyIcon`, and Rx subscriptions.
+- Dispose all `IDisposable` objects — especially `MMDeviceEnumerator`, `MMDevice`, and `NotifyIcon`.
 
 ## General Principles
 
