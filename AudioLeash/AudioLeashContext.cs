@@ -50,9 +50,19 @@ public sealed class AudioLeashContext : ApplicationContext
         _settingsService = new SettingsService();
         _startupService  = new StartupService();
 
-        // Try to restore the previously selected device; fall back to Windows current default.
+        // Restore the previously selected device, or guide the user to pick one.
         string? savedId = _settingsService.LoadSelectedDeviceId();
-        if (savedId is not null)
+
+        if (savedId is null)
+        {
+            // First run: no settings file exists yet. Prompt the user to pick a device.
+            _trayIcon.ShowBalloonTip(
+                timeout:  4000,
+                tipTitle: "Welcome to AudioLeash",
+                tipText:  "Click the tray icon and select a device to enable auto-restore.",
+                tipIcon:  ToolTipIcon.Info);
+        }
+        else
         {
             var active = _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToList();
             bool available = active.Any(d => d.ID == savedId);
@@ -62,14 +72,16 @@ public sealed class AudioLeashContext : ApplicationContext
             {
                 _selection.SelectDevice(savedId);
             }
-        }
-
-        if (_selection.SelectedDeviceId is null)
-        {
-            // No saved preference (or device unavailable) -- seed from Windows current default.
-            using var defaultDevice = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-            if (defaultDevice is not null)
-                _selection.SelectDevice(defaultDevice.ID);
+            else
+            {
+                // Saved device is not connected. Clear persisted selection and notify the user.
+                _settingsService.SaveSelectedDeviceId(null);
+                _trayIcon.ShowBalloonTip(
+                    timeout:  4000,
+                    tipTitle: "Saved Device Not Found",
+                    tipText:  "Your saved audio device was not found. Select a device from the tray menu to re-enable auto-restore.",
+                    tipIcon:  ToolTipIcon.Info);
+            }
         }
 
         RefreshDeviceList();
