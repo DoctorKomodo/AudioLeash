@@ -225,38 +225,49 @@ public sealed class AudioLeashContext : ApplicationContext
                 // CPolicyConfigClient is an STA COM object with no registered proxy/stub.
                 // Calling it from the audio COM thread (a different apartment) causes an
                 // InvalidCastException. Marshal the call to the UI STA thread instead.
-                SafeInvoke(() =>
+                // SafeInvoke uses Control.Invoke (synchronous), so the audio thread
+                // blocks here until the UI thread finishes and resets the flag.
+                // The outer try/finally ensures the flag is cleared even if SafeInvoke
+                // itself throws (e.g. ObjectDisposedException during shutdown).
+                try
                 {
-                    try
+                    SafeInvoke(() =>
                     {
-                        _policyConfig.SetDefaultEndpoint(restoreId);
+                        try
+                        {
+                            _policyConfig.SetDefaultEndpoint(restoreId);
 
-                        var restoreDevices = _enumerator
-                            .EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
-                            .ToList();
-                        string restoredName = restoreDevices.FirstOrDefault(d => d.ID == restoreId)?.FriendlyName ?? restoreId;
-                        foreach (var d in restoreDevices) d.Dispose();
+                            var restoreDevices = _enumerator
+                                .EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
+                                .ToList();
+                            string restoredName = restoreDevices.FirstOrDefault(d => d.ID == restoreId)?.FriendlyName ?? restoreId;
+                            foreach (var d in restoreDevices) d.Dispose();
 
-                        _trayIcon.ShowBalloonTip(
-                            timeout:  3000,
-                            tipTitle: "Audio Device Restored",
-                            tipText:  $"Switched back to: {restoredName}",
-                            tipIcon:  ToolTipIcon.Info);
-                        RefreshDeviceList();
-                    }
-                    catch (Exception ex)
-                    {
-                        _trayIcon.ShowBalloonTip(
-                            timeout:  3000,
-                            tipTitle: "Restore Failed",
-                            tipText:  $"Could not restore audio device:\n{ex.Message}",
-                            tipIcon:  ToolTipIcon.Error);
-                    }
-                    finally
-                    {
-                        _selection.IsInternalChange = false;
-                    }
-                });
+                            _trayIcon.ShowBalloonTip(
+                                timeout:  3000,
+                                tipTitle: "Audio Device Restored",
+                                tipText:  $"Switched back to: {restoredName}",
+                                tipIcon:  ToolTipIcon.Info);
+                            RefreshDeviceList();
+                        }
+                        catch (Exception ex)
+                        {
+                            _trayIcon.ShowBalloonTip(
+                                timeout:  3000,
+                                tipTitle: "Restore Failed",
+                                tipText:  $"Could not restore audio device:\n{ex.Message}",
+                                tipIcon:  ToolTipIcon.Error);
+                        }
+                        finally
+                        {
+                            _selection.IsInternalChange = false;
+                        }
+                    });
+                }
+                catch
+                {
+                    _selection.IsInternalChange = false;
+                }
                 break;
         }
     }
