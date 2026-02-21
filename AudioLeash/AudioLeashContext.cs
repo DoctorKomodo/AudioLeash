@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 using System;
 using System.Drawing;
 using System.Linq;
@@ -21,6 +21,8 @@ public sealed class AudioLeashContext : ApplicationContext
     private readonly PolicyConfigClient   _policyConfig;
     private readonly DeviceSelectionState _selection;
     private readonly AudioNotificationClient _notificationClient;
+    private readonly SettingsService      _settingsService;
+    private readonly StartupService       _startupService;
 
     public AudioLeashContext()
     {
@@ -45,10 +47,30 @@ public sealed class AudioLeashContext : ApplicationContext
         _notificationClient = new AudioNotificationClient(OnDefaultDeviceChanged);
         _enumerator.RegisterEndpointNotificationCallback(_notificationClient);
 
-        // Seed the selection with whatever Windows currently uses as the default.
-        using var defaultDevice = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-        if (defaultDevice is not null)
-            _selection.SelectDevice(defaultDevice.ID);
+        _settingsService = new SettingsService();
+        _startupService  = new StartupService();
+
+        // Try to restore the previously selected device; fall back to Windows current default.
+        string? savedId = _settingsService.LoadSelectedDeviceId();
+        if (savedId is not null)
+        {
+            var active = _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToList();
+            bool available = active.Any(d => d.ID == savedId);
+            foreach (var d in active) d.Dispose();
+
+            if (available)
+            {
+                _selection.SelectDevice(savedId);
+            }
+        }
+
+        if (_selection.SelectedDeviceId is null)
+        {
+            // No saved preference (or device unavailable) -- seed from Windows current default.
+            using var defaultDevice = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+            if (defaultDevice is not null)
+                _selection.SelectDevice(defaultDevice.ID);
+        }
 
         RefreshDeviceList();
     }
@@ -128,6 +150,15 @@ public sealed class AudioLeashContext : ApplicationContext
 
         _contextMenu.Items.Add(new ToolStripSeparator());
 
+        var startupItem = new ToolStripMenuItem("Start with Windows")
+        {
+            Checked = _startupService.IsEnabled,
+        };
+        startupItem.Click += StartupItem_Click;
+        _contextMenu.Items.Add(startupItem);
+
+        _contextMenu.Items.Add(new ToolStripSeparator());
+
         var exitItem = new ToolStripMenuItem("Exit");
         exitItem.Click += Exit_Click;
         _contextMenu.Items.Add(exitItem);
@@ -147,6 +178,7 @@ public sealed class AudioLeashContext : ApplicationContext
             _policyConfig.SetDefaultEndpoint(deviceId);
 
             _selection.SelectDevice(deviceId);
+            _settingsService.SaveSelectedDeviceId(deviceId);
 
             _trayIcon.ShowBalloonTip(
                 timeout:  2500,
@@ -169,12 +201,30 @@ public sealed class AudioLeashContext : ApplicationContext
     private void ClearSelection_Click(object? sender, EventArgs e)
     {
         _selection.ClearSelection();
+        _settingsService.SaveSelectedDeviceId(null);
 
         _trayIcon.ShowBalloonTip(
             timeout:  2500,
             tipTitle: "Selection Cleared",
             tipText:  "Auto-restore disabled. Select a device to re-enable.",
             tipIcon:  ToolTipIcon.Info);
+
+        RefreshDeviceList();
+    }
+
+    private void StartupItem_Click(object? sender, EventArgs e)
+    {
+        try
+        {
+            if (_startupService.IsEnabled)
+                _startupService.Disable();
+            else
+                _startupService.Enable(Environment.ProcessPath ?? Application.ExecutablePath);
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Could not update startup setting:\n{ex.Message}");
+        }
 
         RefreshDeviceList();
     }
@@ -206,6 +256,7 @@ public sealed class AudioLeashContext : ApplicationContext
                 _selection.ClearSelection();
                 SafeInvoke(() =>
                 {
+                    _settingsService.SaveSelectedDeviceId(null);
                     _trayIcon.ShowBalloonTip(
                         timeout:  3000,
                         tipTitle: "Audio Device Unavailable",
