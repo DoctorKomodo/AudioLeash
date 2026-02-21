@@ -1,4 +1,3 @@
-using System;
 using System.Windows.Forms;
 
 namespace AudioLeash
@@ -10,9 +9,7 @@ namespace AudioLeash
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-
-            // Run without a visible form — only a system tray icon
-            Application.Run(new AudioSwitcherContext());
+            Application.Run(new AudioLeashContext());
         }
     }
 }
