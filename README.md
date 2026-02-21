@@ -95,7 +95,8 @@ No window appears — the app lives entirely in the system notification area (tr
 
 ### 14. Settings Persistence
 - The user-selected audio device is saved to `%AppData%\AudioLeash\settings.json`.
-- On next launch, AudioLeash restores the saved selection automatically (if the device is still available).
+- On first launch (no settings file), a balloon tip prompts the user to select a device from the tray menu — the app is passive until a device is chosen explicitly.
+- On subsequent launches, AudioLeash restores the saved selection automatically (if the device is still available); if the saved device is not found, the selection is cleared and the user is notified.
 - Clearing the selection also removes the saved preference.
 
 ---
@@ -125,7 +126,7 @@ AudioLeash/
 - **Hotkey cycling** — Global keyboard shortcut to cycle to the next audio device.
 - **Communication device** — Also set the "default communications device" alongside the default playback device.
 - **Recording device support** — Extend to microphone/input devices.
-- **Profiles** — Named profiles that switch multiple devices (playback + recording) together.
+- **Profiles** — Named profiles that switch multiple devices (playback + recording) together. Could also address the boot-time race condition where a saved device hasn't finished initialising when the app starts — a profile-aware restore could defer until the target device comes online.
 - **Per-app routing** — Use Windows 10+ per-application audio settings where supported.
 - ~~**Settings persistence**~~ — ✔ Implemented (JSON file in `%AppData%\AudioLeash\`).
 - **Tooltip on hover** — Show the currently selected device name in the tray icon tooltip.
