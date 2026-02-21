@@ -114,6 +114,8 @@ AudioLeash/
 ```
 
 ---
+## Bug fixes
+- Leash doesn't work on startup before the menu has been accessed. 
 
 ## Ideas for Future Development
 
