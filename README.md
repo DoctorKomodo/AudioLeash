@@ -38,7 +38,6 @@ No window appears — the app lives entirely in the system notification area (tr
 - The application runs headlessly — no main window is shown.
 - An icon appears in the Windows notification area.
 - **Left-click** or **right-click** the icon to open the device menu.
-- The icon falls back to the standard system application icon if no custom `Resources/icon.ico` is found.
 
 ### 2. Audio Device Listing
 - On every menu open, the current list of **active (enabled) playback devices** is fetched from the Windows Core Audio API.
@@ -80,20 +79,16 @@ No window appears — the app lives entirely in the system notification area (tr
 - `IMMNotificationClient` callbacks arrive on a Windows COM audio thread.
 - All UI updates (balloon tips, menu refresh) are marshalled back to the UI thread via `Control.InvokeRequired` / `Control.Invoke`.
 
-### 11. Custom Icon Support
-- Place a file named `icon.ico` in a `Resources/` subfolder next to the executable to use a custom tray icon.
-- The app falls back to the Windows default application icon automatically if the file is missing.
-
-### 12. Clean Exit
+### 11. Clean Exit
 - The **"Exit"** menu item hides the tray icon and terminates the application.
 - All resources (`NotifyIcon`, `ContextMenuStrip`, `CoreAudioController`) are properly disposed.
 
-### 13. Start with Windows
+### 12. Start with Windows
 - A **"Start with Windows"** item in the tray menu registers or removes AudioLeash from the Windows `HKCU\...\Run` registry key.
 - A checkmark indicates it is currently registered.
 - Clicking the item toggles registration on or off.
 
-### 14. Settings Persistence
+### 13. Settings Persistence
 - The user-selected audio device is saved to `%AppData%\AudioLeash\settings.json`.
 - On first launch (no settings file), a balloon tip prompts the user to select a device from the tray menu — the app is passive until a device is chosen explicitly.
 - On subsequent launches, AudioLeash restores the saved selection automatically (if the device is still available); if the saved device is not found, the selection is cleared and the user is notified.
@@ -115,7 +110,7 @@ AudioLeash/
     ├── SettingsService.cs       ← JSON settings persistence (%AppData%\AudioLeash\)
     ├── StartupService.cs        ← Windows Run-key startup registration
     └── Resources/
-        └── icon.ico             ← (optional) custom tray icon
+        └── icon.ico             ← tray icon
 ```
 
 ---
