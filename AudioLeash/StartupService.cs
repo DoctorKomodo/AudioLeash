@@ -33,8 +33,10 @@ public sealed class StartupService
     /// <summary>Writes the Run value pointing to <paramref name="exePath"/>.</summary>
     public void Enable(string exePath)
     {
+        // Wrap in quotes so paths containing spaces are parsed correctly by Windows at login.
+        string quotedPath = exePath.Contains('"') ? exePath : $"\"{exePath}\"";
         using var key = Registry.CurrentUser.CreateSubKey(_runKeyPath, writable: true);
-        key.SetValue(AppName, exePath);
+        key.SetValue(AppName, quotedPath);
     }
 
     /// <summary>Removes the Run value. Safe to call when already disabled.</summary>
