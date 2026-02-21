@@ -95,7 +95,8 @@ No window appears — the app lives entirely in the system notification area (tr
 
 ### 14. Settings Persistence
 - The user-selected audio device is saved to `%AppData%\AudioLeash\settings.json`.
-- On next launch, AudioLeash restores the saved selection automatically (if the device is still available).
+- On first launch (no settings file), a balloon tip prompts the user to select a device from the tray menu — the app is passive until a device is chosen explicitly.
+- On subsequent launches, AudioLeash restores the saved selection automatically (if the device is still available); if the saved device is not found, the selection is cleared and the user is notified.
 - Clearing the selection also removes the saved preference.
 
 ---
