@@ -371,10 +371,10 @@ public sealed class AudioLeashContext : ApplicationContext
     {
         try
         {
-            string iconPath = System.IO.Path.Combine(
-                AppContext.BaseDirectory, "Resources", "icon.ico");
-            if (System.IO.File.Exists(iconPath))
-                return new Icon(iconPath);
+            using var stream = System.Reflection.Assembly.GetExecutingAssembly()
+                .GetManifestResourceStream("AudioLeash.Resources.icon.ico");
+            if (stream is not null)
+                return new Icon(stream);
         }
         catch { /* fall through to default */ }
         return SystemIcons.Application;
