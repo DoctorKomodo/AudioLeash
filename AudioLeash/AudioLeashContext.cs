@@ -40,6 +40,15 @@ public sealed class AudioLeashContext : ApplicationContext
         };
         _trayIcon.MouseClick += TrayIcon_MouseClick;
 
+        // Force the ContextMenuStrip's HWND to be created now, before registering for
+        // device-change notifications. Control.InvokeRequired returns false when
+        // IsHandleCreated is false (regardless of which thread is calling), so SafeInvoke
+        // would incorrectly run on the audio COM thread before the menu is first displayed.
+        // Accessing .Handle forces handle creation and must happen before calling
+        // RegisterEndpointNotificationCallback to guarantee "handle exists before any
+        // notification can arrive".
+        _ = _contextMenu.Handle;
+
         // Register for device-change notifications.
         // IMPORTANT: _notificationClient must be a class field, not a local variable.
         // If the GC collects it while Windows holds a native COM pointer the process
@@ -343,10 +352,16 @@ public sealed class AudioLeashContext : ApplicationContext
 
     private void SafeInvoke(Action action)
     {
-        if (_contextMenu.InvokeRequired)
-            _contextMenu.Invoke(action);
-        else
-            action();
+        if (!_contextMenu.IsHandleCreated) return;
+        try
+        {
+            if (_contextMenu.InvokeRequired)
+                _contextMenu.Invoke(action);
+            else
+                action(); // Already on the UI thread; invoke directly.
+        }
+        catch (ObjectDisposedException) { /* shutting down */ }
+        catch (InvalidOperationException) { /* handle destroyed mid-flight */ }
     }
 
     private static void ShowError(string message) =>
