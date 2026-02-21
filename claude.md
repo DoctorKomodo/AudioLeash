@@ -218,3 +218,4 @@ The following are tracked ideas from the README. Reference this list when scopin
 - Tray icon tooltip showing selected device name
 - Dark/light theme icon variants
 - Volume indicator / master volume control from tray
+- Single-instance enforcement — if launched a second time while already running, the new process should detect the existing instance and exit immediately (no duplicate tray icon); typical implementation uses a named `Mutex` in `Program.cs`
