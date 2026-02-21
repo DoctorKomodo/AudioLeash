@@ -18,8 +18,8 @@ The application runs headlessly — no main window — and lives entirely in the
 |---|---|
 | Language | C# 12 (.NET 8) |
 | UI | Windows Forms (WinForms) — system tray only |
-| Audio API | AudioSwitcher.AudioApi.CoreAudio 3.1.0 |
-| Reactive events | System.Reactive (Rx.NET) via AudioSwitcher |
+| Audio API | NAudio.Wasapi 2.2.1 (`MMDeviceEnumerator`, `IMMNotificationClient`) |
+| Default device | `PolicyConfigClient.cs` (self-contained COM interop, ~110 lines) |
 | Target OS | Windows 10 / 11 only |
 | Build | `dotnet build AudioLeash.sln -c Release` |
 
@@ -33,16 +33,18 @@ AudioLeash/
 └── AudioLeash/
     ├── AudioLeash.csproj
     ├── Program.cs               ← Entry point; STA thread, WinForms bootstrap
-    ├── AudioSwitcherContext.cs  ← All application logic (tray, menu, device events)
+    ├── AudioLeashContext.cs     ← All application logic (tray, menu, device events)
+    ├── DeviceSelectionState.cs  ← Pure selection state machine (unit-testable)
+    ├── PolicyConfigClient.cs    ← COM interop: sets Windows default audio endpoint
     └── Resources/
         └── icon.ico             ← (optional) custom tray icon
 ```
 
 ## Key Design Constraints
 
-- The application is **single-file logic** (`AudioSwitcherContext.cs`) — keep this architecture unless there is a strong reason to split.
-- All UI interactions must occur on the **UI/STA thread**. Background Rx events must be marshalled via `Control.Invoke`.
-- An `isInternalChange` flag prevents feedback loops when the app itself triggers a device change.
+- Core logic lives in `AudioLeashContext.cs`. `DeviceSelectionState.cs` and `PolicyConfigClient.cs` are intentional splits: the former enables unit testing of pure logic; the latter isolates COM interop infrastructure.
+- All UI interactions must occur on the **UI/STA thread**. `IMMNotificationClient` callbacks arrive on a Windows COM audio thread and must be marshalled via `Control.Invoke` (see `SafeInvoke` in `AudioLeashContext`).
+- `DeviceSelectionState.IsInternalChange` (volatile) prevents feedback loops when the app itself triggers a device change.
 - No settings are persisted to disk or registry today — selected device is in-memory only.
 
 ---
@@ -115,7 +117,7 @@ dotnet test AudioLeash.sln
 ### What to Test
 
 - **Unit test** pure logic: device selection state, loop-prevention flag transitions, graceful-unavailable-device handling.
-- **Do not** write tests that require a real Windows audio stack — mock `IAudioController` / `IDevice` interfaces provided by AudioSwitcher.
+- **Do not** write tests that require a real Windows audio stack — mock `IMMNotificationClient` or extract pure logic (as done with `DeviceSelectionState`) to test without the audio stack.
 - **Do not** test WinForms UI mechanics directly; extract logic into testable methods/classes first.
 
 ### Test Quality Bar
@@ -216,4 +218,3 @@ The following are tracked ideas from the README. Reference this list when scopin
 - Tray icon tooltip showing selected device name
 - Dark/light theme icon variants
 - Volume indicator / master volume control from tray
-- Migrate off `AudioSwitcher.AudioApi.CoreAudio` → NAudio + custom `PolicyConfigClient.cs` COM interop (see README for rationale)
