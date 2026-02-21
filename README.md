@@ -77,7 +77,7 @@ No window appears — the app lives entirely in the system notification area (tr
 - A **"Refresh List"** menu item re-queries and rebuilds the device list on demand, useful if a device was connected/disconnected while the menu was already open.
 
 ### 10. Thread Safety
-- The `AudioDeviceChanged` event arrives on a background Rx/IO thread.
+- `IMMNotificationClient` callbacks arrive on a Windows COM audio thread.
 - All UI updates (balloon tips, menu refresh) are marshalled back to the UI thread via `Control.InvokeRequired` / `Control.Invoke`.
 
 ### 11. Custom Icon Support
@@ -98,7 +98,7 @@ AudioLeash/
 └── AudioLeash/
     ├── AudioLeash.csproj
     ├── Program.cs               ← Entry point; runs AudioLeashContext
-    ├── AudioSwitcherContext.cs  ← All application logic (AudioLeashContext class)
+    ├── AudioLeashContext.cs     ← All application logic
     ├── DeviceSelectionState.cs  ← Pure selection state machine (unit-testable)
     ├── PolicyConfigClient.cs    ← COM interop: sets Windows default audio endpoint
     └── Resources/
