@@ -129,5 +129,5 @@ AudioLeash/
 - **Tooltip on hover** — Show the currently selected device name in the tray icon tooltip.
 - **Dark/light theme icon** — Switch icon variant based on Windows theme.
 - **Volume indicator** — Show or control master volume from the tray menu.
-- **Single-instance enforcement** — If the app is launched a second time while already running, the new process should detect the existing instance and exit immediately rather than creating a duplicate tray icon. Typical implementation uses a named `Mutex` acquired at startup in `Program.cs`.
+- ~~**Single-instance enforcement**~~ — ✔ Implemented (named `Mutex` in `Program.cs`; second instance exits silently).
 
