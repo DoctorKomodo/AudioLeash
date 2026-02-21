@@ -88,6 +88,16 @@ No window appears — the app lives entirely in the system notification area (tr
 - The **"Exit"** menu item hides the tray icon and terminates the application.
 - All resources (`NotifyIcon`, `ContextMenuStrip`, `CoreAudioController`) are properly disposed.
 
+### 13. Start with Windows
+- A **"Start with Windows"** item in the tray menu registers or removes AudioLeash from the Windows `HKCU\...\Run` registry key.
+- A checkmark indicates it is currently registered.
+- Clicking the item toggles registration on or off.
+
+### 14. Settings Persistence
+- The user-selected audio device is saved to `%AppData%\AudioLeash\settings.json`.
+- On next launch, AudioLeash restores the saved selection automatically (if the device is still available).
+- Clearing the selection also removes the saved preference.
+
 ---
 
 ## Project Structure
@@ -109,13 +119,13 @@ AudioLeash/
 
 ## Ideas for Future Development
 
-- **Windows startup** — Add/remove a registry `Run` key to launch the app at login.
+- ~~**Windows startup**~~ — ✔ Implemented (registry `Run` key toggle in tray menu).
 - **Hotkey cycling** — Global keyboard shortcut to cycle to the next audio device.
 - **Communication device** — Also set the "default communications device" alongside the default playback device.
 - **Recording device support** — Extend to microphone/input devices.
 - **Profiles** — Named profiles that switch multiple devices (playback + recording) together.
 - **Per-app routing** — Use Windows 10+ per-application audio settings where supported.
-- **Settings persistence** — Save selected device across restarts (JSON or registry).
+- ~~**Settings persistence**~~ — ✔ Implemented (JSON file in `%AppData%\AudioLeash\`).
 - **Tooltip on hover** — Show the currently selected device name in the tray icon tooltip.
 - **Dark/light theme icon** — Switch icon variant based on Windows theme.
 - **Volume indicator** — Show or control master volume from the tray menu.
