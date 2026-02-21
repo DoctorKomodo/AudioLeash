@@ -30,6 +30,13 @@ public sealed class SettingsService
     /// <summary>Test constructor — uses the provided directory.</summary>
     internal SettingsService(string directory) => _directory = directory;
 
+    /// <summary>
+    /// Returns <c>true</c> if the settings file exists on disk, regardless of its contents.
+    /// Use this to distinguish a genuine first run (no file) from an explicit "no device" state
+    /// (file exists but <see cref="LoadSelectedDeviceId"/> returned <c>null</c>).
+    /// </summary>
+    public bool HasSettingsFile => File.Exists(FilePath);
+
     public string? LoadSelectedDeviceId()
     {
         try

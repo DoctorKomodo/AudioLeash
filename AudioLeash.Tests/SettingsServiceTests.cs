@@ -48,4 +48,30 @@ public sealed class SettingsServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_tempDir, "settings.json"), "not valid json{{{{");
         Assert.Null(svc.LoadSelectedDeviceId());
     }
+
+    [Fact]
+    public void HasSettingsFile_WhenFileAbsent_ReturnsFalse()
+    {
+        Assert.False(Svc().HasSettingsFile);
+    }
+
+    [Fact]
+    public void HasSettingsFile_AfterSaveWithId_ReturnsTrue()
+    {
+        var svc = Svc();
+        svc.SaveSelectedDeviceId("device-123");
+        Assert.True(svc.HasSettingsFile);
+    }
+
+    [Fact]
+    public void HasSettingsFile_AfterSaveNull_ReturnsTrueDistinguishingFromAbsent()
+    {
+        // Saving null writes the file (user explicitly cleared selection).
+        // HasSettingsFile must return true so the caller can distinguish this
+        // from a genuine first run where no file exists.
+        var svc = Svc();
+        svc.SaveSelectedDeviceId(null);
+        Assert.True(svc.HasSettingsFile);
+        Assert.Null(svc.LoadSelectedDeviceId());
+    }
 }
