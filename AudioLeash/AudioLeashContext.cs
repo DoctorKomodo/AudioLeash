@@ -55,12 +55,18 @@ public sealed class AudioLeashContext : ApplicationContext
 
         if (savedId is null)
         {
-            // First run: no settings file exists yet. Prompt the user to pick a device.
-            _trayIcon.ShowBalloonTip(
-                timeout:  4000,
-                tipTitle: "Welcome to AudioLeash",
-                tipText:  "Click the tray icon and select a device to enable auto-restore.",
-                tipIcon:  ToolTipIcon.Info);
+            if (!_settingsService.HasSettingsFile)
+            {
+                // Settings file does not exist yet — genuine first run.
+                // Prompt the user to pick a device; the app is passive until they do.
+                _trayIcon.ShowBalloonTip(
+                    timeout:  4000,
+                    tipTitle: "Welcome to AudioLeash",
+                    tipText:  "Click the tray icon and select a device to enable auto-restore.",
+                    tipIcon:  ToolTipIcon.Info);
+            }
+            // If the file exists but savedId is null, the user previously cleared their
+            // selection or their saved device was not found on a prior run — stay passive silently.
         }
         else
         {
