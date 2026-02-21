@@ -46,8 +46,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 ; value, so the user can change this preference at any time after installation.
 Name: "startup"; \
   Description: "Start {#MyAppName} automatically when Windows starts"; \
-  GroupDescription: "Startup:"; \
-  Flags: checked
+  GroupDescription: "Startup:"
 
 [Files]
 ; Copies everything produced by `dotnet publish` into {app}.

@@ -4,9 +4,10 @@
     Builds AudioLeash and packages it as a Windows installer.
 
 .DESCRIPTION
-    1. Runs `dotnet publish` to produce a framework-dependent, single-file,
-       win-x64 build under .\publish\.
-    2. Compiles installer\AudioLeash.iss with Inno Setup 6 to produce
+    1. Cleans .\publish\ to remove any stale files from previous builds.
+    2. Runs `dotnet publish` to produce a framework-dependent build under
+       .\publish\.
+    3. Compiles installer\AudioLeash.iss with Inno Setup 6 to produce
        installer\Output\AudioLeash-Setup.exe.
 
 .NOTES
@@ -25,17 +26,24 @@ $PublishDir = Join-Path $ScriptDir 'publish'
 $IssFile    = Join-Path $ScriptDir 'installer\AudioLeash.iss'
 
 # ---------------------------------------------------------------------------
-# 1. dotnet publish
+# 1. Clean publish folder
 # ---------------------------------------------------------------------------
 Write-Host ''
-Write-Host '==> Publishing AudioLeash (framework-dependent, single-file, win-x64)...' `
+Write-Host '==> Cleaning publish folder...' -ForegroundColor Cyan
+
+if (Test-Path $PublishDir) {
+    Remove-Item $PublishDir -Recurse -Force
+}
+
+# ---------------------------------------------------------------------------
+# 2. dotnet publish
+# ---------------------------------------------------------------------------
+Write-Host ''
+Write-Host '==> Publishing AudioLeash (framework-dependent)...' `
     -ForegroundColor Cyan
 
 dotnet publish $Project `
     --configuration Release `
-    --runtime       win-x64 `
-    --self-contained false `
-    -p:PublishSingleFile=true `
     --output $PublishDir
 
 if ($LASTEXITCODE -ne 0) {
@@ -44,7 +52,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ---------------------------------------------------------------------------
-# 2. Locate ISCC.exe (Inno Setup compiler)
+# 3. Locate ISCC.exe (Inno Setup compiler)
 # ---------------------------------------------------------------------------
 $isccCandidates = @(
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
@@ -62,7 +70,7 @@ if (-not $iscc) {
 }
 
 # ---------------------------------------------------------------------------
-# 3. Compile installer
+# 4. Compile installer
 # ---------------------------------------------------------------------------
 Write-Host ''
 Write-Host '==> Compiling Inno Setup installer...' -ForegroundColor Cyan
