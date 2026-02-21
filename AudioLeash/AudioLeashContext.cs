@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 using System;
 using System.Drawing;
 using System.Linq;
@@ -150,6 +150,15 @@ public sealed class AudioLeashContext : ApplicationContext
 
         _contextMenu.Items.Add(new ToolStripSeparator());
 
+        var startupItem = new ToolStripMenuItem("Start with Windows")
+        {
+            Checked = _startupService.IsEnabled,
+        };
+        startupItem.Click += StartupItem_Click;
+        _contextMenu.Items.Add(startupItem);
+
+        _contextMenu.Items.Add(new ToolStripSeparator());
+
         var exitItem = new ToolStripMenuItem("Exit");
         exitItem.Click += Exit_Click;
         _contextMenu.Items.Add(exitItem);
@@ -199,6 +208,23 @@ public sealed class AudioLeashContext : ApplicationContext
             tipTitle: "Selection Cleared",
             tipText:  "Auto-restore disabled. Select a device to re-enable.",
             tipIcon:  ToolTipIcon.Info);
+
+        RefreshDeviceList();
+    }
+
+    private void StartupItem_Click(object? sender, EventArgs e)
+    {
+        try
+        {
+            if (_startupService.IsEnabled)
+                _startupService.Disable();
+            else
+                _startupService.Enable(Environment.ProcessPath ?? Application.ExecutablePath);
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Could not update startup setting:\n{ex.Message}");
+        }
 
         RefreshDeviceList();
     }
