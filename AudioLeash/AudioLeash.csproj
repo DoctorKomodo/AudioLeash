@@ -19,9 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Resources\icon.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <EmbeddedResource Include="Resources\icon.ico" />
   </ItemGroup>
 
 </Project>
