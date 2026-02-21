@@ -15,3 +15,10 @@
 
 # Binary assets
 **/Resources/*.ico
+
+# Historical plan documents
+docs/plans/
+
+# Claude-internal directories
+.claude/
+.worktrees/
