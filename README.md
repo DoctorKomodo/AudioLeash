@@ -108,9 +108,11 @@ AudioLeash/
 └── AudioLeash/
     ├── AudioLeash.csproj
     ├── Program.cs               ← Entry point; runs AudioLeashContext
-    ├── AudioLeashContext.cs     ← All application logic
+    ├── AudioLeashContext.cs     ← All application logic (tray, menu, device events)
     ├── DeviceSelectionState.cs  ← Pure selection state machine (unit-testable)
     ├── PolicyConfigClient.cs    ← COM interop: sets Windows default audio endpoint
+    ├── SettingsService.cs       ← JSON settings persistence (%AppData%\AudioLeash\)
+    ├── StartupService.cs        ← Windows Run-key startup registration
     └── Resources/
         └── icon.ico             ← (optional) custom tray icon
 ```

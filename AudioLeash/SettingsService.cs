@@ -39,7 +39,7 @@ public sealed class SettingsService
             var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions);
             return settings?.SelectedDeviceId;
         }
-        catch
+        catch (Exception)
         {
             return null;
         }
@@ -54,7 +54,7 @@ public sealed class SettingsService
             var json = JsonSerializer.Serialize(settings, JsonOptions);
             File.WriteAllText(FilePath, json);
         }
-        catch { /* best-effort — do not crash the app over persistence */ }
+        catch (Exception) { /* best-effort — do not crash the app over persistence */ }
     }
 
     private sealed record AppSettings(string? SelectedDeviceId);
