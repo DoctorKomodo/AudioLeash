@@ -115,7 +115,7 @@ AudioLeash/
 
 ---
 ## Bugs to be fixed
-- Leash doesn't work on startup before the menu has been accessed. 
+- **`SelectedDeviceId` race condition** — `OnDefaultDeviceChanged` reads `SelectedDeviceId` twice on the audio thread (once inside `EvaluateDefaultChange`, once to capture `restoreId`) with no lock between them. If the user clicks "Clear Selection" on the UI thread in that gap, `restoreId` will be `null` despite the `!` assertion. Extremely unlikely in practice and the inner `try/catch` handles the resulting exception gracefully, but a proper fix would snapshot `SelectedDeviceId` once under a lock and pass the snapshot through.
 
 ## Ideas for Future Development
 
