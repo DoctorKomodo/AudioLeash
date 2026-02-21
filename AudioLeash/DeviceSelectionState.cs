@@ -21,7 +21,8 @@ internal sealed class DeviceSelectionState
     /// <summary>
     /// Set to <c>true</c> while the app itself is switching the default device,
     /// to prevent the change-notification handler from triggering a feedback loop.
-    /// Written from the UI thread (menu click) and the Windows audio thread (restore path).
+    /// Written from both threads: the UI thread (menu click and restore path) and the
+    /// Windows audio thread (which sets it <c>true</c> before dispatching to the UI thread).
     /// </summary>
     public bool IsInternalChange
     {
