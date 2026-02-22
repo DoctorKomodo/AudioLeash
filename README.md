@@ -107,7 +107,14 @@ The installer:
 - A checkmark indicates it is currently registered.
 - Clicking the item toggles registration on or off.
 
-### 13. Settings Persistence
+### 13. Dark Mode Menu
+
+- The tray context menu automatically adapts its colour scheme to the Windows colour theme.
+- When Windows is in **dark mode** the menu uses a dark background (`#1F1F1F`) with light text, a subtle highlight on hover, and a muted separator.
+- When Windows is in **light mode** the menu reverts to the standard WinForms appearance.
+- The renderer updates **live** — if the user switches theme in Windows Settings while AudioLeash is running, the next menu open reflects the new theme immediately; no restart required.
+
+### 14. Settings Persistence
 - The user-selected audio device is saved to `%AppData%\AudioLeash\settings.json`.
 - On first launch (no settings file), a balloon tip prompts the user to select a device from the tray menu — the app is passive until a device is chosen explicitly.
 - On subsequent launches, AudioLeash restores the saved selection automatically (if the device is still available); if the saved device is not found, the selection is cleared and the user is notified.
@@ -149,7 +156,7 @@ AudioLeash/
 - **Per-app routing** — Use Windows 10+ per-application audio settings where supported.
 - ~~**Settings persistence**~~ — ✔ Implemented (JSON file in `%AppData%\AudioLeash\`).
 - **Tooltip on hover** — Show the currently selected device name in the tray icon tooltip.
-- **Dark mode menu** — Render the tray context menu with a dark colour scheme when Windows is in dark theme.
+- ~~**Dark mode menu**~~ — ✔ Implemented (context menu automatically uses a dark palette when Windows is in dark theme; updates live when the user changes the setting).
 - **Volume indicator** — Show or control master volume from the tray menu.
 - ~~**Single-instance enforcement**~~ — ✔ Implemented (named `Mutex` in `Program.cs`; second instance exits silently).
 
