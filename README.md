@@ -149,7 +149,7 @@ AudioLeash/
 - **Per-app routing** — Use Windows 10+ per-application audio settings where supported.
 - ~~**Settings persistence**~~ — ✔ Implemented (JSON file in `%AppData%\AudioLeash\`).
 - **Tooltip on hover** — Show the currently selected device name in the tray icon tooltip.
-- **Dark/light theme icon** — Switch icon variant based on Windows theme.
+- **Dark mode menu** — Render the tray context menu with a dark colour scheme when Windows is in dark theme.
 - **Volume indicator** — Show or control master volume from the tray menu.
 - ~~**Single-instance enforcement**~~ — ✔ Implemented (named `Mutex` in `Program.cs`; second instance exits silently).
 
