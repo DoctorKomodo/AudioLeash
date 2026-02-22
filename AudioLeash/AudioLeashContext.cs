@@ -15,14 +15,14 @@ namespace AudioLeash;
 /// </summary>
 public sealed class AudioLeashContext : ApplicationContext
 {
-    private readonly NotifyIcon           _trayIcon;
-    private readonly ContextMenuStrip     _contextMenu;
-    private readonly MMDeviceEnumerator   _enumerator;
-    private readonly PolicyConfigClient   _policyConfig;
-    private readonly DeviceSelectionState _selection;
+    private readonly NotifyIcon              _trayIcon;
+    private readonly ContextMenuStrip        _contextMenu;
+    private readonly MMDeviceEnumerator      _enumerator;
+    private readonly PolicyConfigClient      _policyConfig;
+    private readonly DeviceSelectionState    _selection;
     private readonly AudioNotificationClient _notificationClient;
-    private readonly SettingsService      _settingsService;
-    private readonly StartupService       _startupService;
+    private readonly SettingsService         _settingsService;
+    private readonly StartupService          _startupService;
 
     public AudioLeashContext()
     {
@@ -30,6 +30,7 @@ public sealed class AudioLeashContext : ApplicationContext
         _policyConfig = new PolicyConfigClient();
         _selection    = new DeviceSelectionState();
         _contextMenu  = new ContextMenuStrip();
+        ApplyTheme();
 
         _trayIcon = new NotifyIcon
         {
@@ -48,6 +49,10 @@ public sealed class AudioLeashContext : ApplicationContext
         // RegisterEndpointNotificationCallback to guarantee "handle exists before any
         // notification can arrive".
         _ = _contextMenu.Handle;
+
+        // Subscribe to Windows theme changes so the menu renderer updates in real time
+        // when the user toggles dark/light mode in Windows Settings.
+        WindowsTheme.Changed += OnThemeChanged;
 
         // Register for device-change notifications.
         // IMPORTANT: _notificationClient must be a class field, not a local variable.
@@ -364,6 +369,17 @@ public sealed class AudioLeashContext : ApplicationContext
         catch (InvalidOperationException) { /* handle destroyed mid-flight */ }
     }
 
+    /// <summary>
+    /// Applies a renderer to <see cref="_contextMenu"/> that matches the current Windows
+    /// colour theme (dark or light).  Safe to call on any thread that owns the menu handle.
+    /// </summary>
+    private void ApplyTheme() =>
+        _contextMenu.Renderer = WindowsTheme.IsDarkMode
+            ? new DarkMenuRenderer()
+            : new ToolStripProfessionalRenderer();
+
+    private void OnThemeChanged(object? sender, EventArgs e) => SafeInvoke(ApplyTheme);
+
     private static void ShowError(string message) =>
         MessageBox.Show(message, "AudioLeash", MessageBoxButtons.OK, MessageBoxIcon.Error);
 
@@ -390,6 +406,7 @@ public sealed class AudioLeashContext : ApplicationContext
     {
         if (disposing)
         {
+            WindowsTheme.Changed -= OnThemeChanged;
             _enumerator.UnregisterEndpointNotificationCallback(_notificationClient);
 
             foreach (ToolStripItem item in _contextMenu.Items)
