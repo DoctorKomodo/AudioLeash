@@ -69,6 +69,7 @@ public sealed class AudioLeashContext : ApplicationContext
 
         if (savedId is null)
         {
+            UpdateTrayTooltip(null);
             if (!_settingsService.HasSettingsFile)
             {
                 // Settings file does not exist yet — genuine first run.
@@ -85,17 +86,21 @@ public sealed class AudioLeashContext : ApplicationContext
         else
         {
             var active = _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToList();
-            bool available = active.Any(d => d.ID == savedId);
+            var savedDevice = active.FirstOrDefault(d => d.ID == savedId);
+            bool available = savedDevice is not null;
+            string? savedName = savedDevice?.FriendlyName;
             foreach (var d in active) d.Dispose();
 
             if (available)
             {
                 _selection.SelectDevice(savedId);
+                UpdateTrayTooltip(savedName);
             }
             else
             {
                 // Saved device is not connected. Clear persisted selection and notify the user.
                 _settingsService.SaveSelectedDeviceId(null);
+                UpdateTrayTooltip(null);
                 _trayIcon.ShowBalloonTip(
                     timeout:  4000,
                     tipTitle: "Saved Device Not Found",
@@ -210,6 +215,7 @@ public sealed class AudioLeashContext : ApplicationContext
             _policyConfig.SetDefaultEndpoint(deviceId);
 
             _selection.SelectDevice(deviceId);
+            UpdateTrayTooltip(deviceName);
             _settingsService.SaveSelectedDeviceId(deviceId);
 
             _trayIcon.ShowBalloonTip(
@@ -233,6 +239,7 @@ public sealed class AudioLeashContext : ApplicationContext
     private void ClearSelection_Click(object? sender, EventArgs e)
     {
         _selection.ClearSelection();
+        UpdateTrayTooltip(null);
         _settingsService.SaveSelectedDeviceId(null);
 
         _trayIcon.ShowBalloonTip(
@@ -289,6 +296,7 @@ public sealed class AudioLeashContext : ApplicationContext
                 SafeInvoke(() =>
                 {
                     _settingsService.SaveSelectedDeviceId(null);
+                    UpdateTrayTooltip(null);
                     _trayIcon.ShowBalloonTip(
                         timeout:  3000,
                         tipTitle: "Audio Device Unavailable",
@@ -325,6 +333,8 @@ public sealed class AudioLeashContext : ApplicationContext
                                 .ToList();
                             string restoredName = restoreDevices.FirstOrDefault(d => d.ID == restoreId)?.FriendlyName ?? restoreId;
                             foreach (var d in restoreDevices) d.Dispose();
+
+                            UpdateTrayTooltip(restoredName);
 
                             _trayIcon.ShowBalloonTip(
                                 timeout:  3000,
@@ -382,6 +392,14 @@ public sealed class AudioLeashContext : ApplicationContext
 
     private static void ShowError(string message) =>
         MessageBox.Show(message, "AudioLeash", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+    private void UpdateTrayTooltip(string? deviceName)
+    {
+        string text = deviceName is null
+            ? "AudioLeash — No device selected"
+            : $"AudioLeash — {deviceName}";
+        _trayIcon.Text = text.Length > 63 ? text[..62] + "…" : text;
+    }
 
     private static Icon GetTrayIcon()
     {
