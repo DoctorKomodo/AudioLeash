@@ -49,6 +49,7 @@ public sealed class AudioLeashContext : ApplicationContext
         // RegisterEndpointNotificationCallback to guarantee "handle exists before any
         // notification can arrive".
         _ = _contextMenu.Handle;
+        _contextMenu.Opening += (_, _) => RefreshDeviceList();
 
         // Subscribe to Windows theme changes so the menu renderer updates in real time
         // when the user toggles dark/light mode in Windows Settings.
@@ -116,8 +117,6 @@ public sealed class AudioLeashContext : ApplicationContext
     {
         if (e.Button != MouseButtons.Left) return;
 
-        RefreshDeviceList();
-
         // WinForms only shows the context menu automatically on right-click;
         // invoke it manually for left-click via reflection.
         typeof(NotifyIcon)
@@ -180,10 +179,6 @@ public sealed class AudioLeashContext : ApplicationContext
         };
         clearItem.Click += ClearSelection_Click;
         _contextMenu.Items.Add(clearItem);
-
-        var refreshItem = new ToolStripMenuItem("Refresh List");
-        refreshItem.Click += (_, _) => RefreshDeviceList();
-        _contextMenu.Items.Add(refreshItem);
 
         _contextMenu.Items.Add(new ToolStripSeparator());
 
