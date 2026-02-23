@@ -126,7 +126,7 @@ public sealed class AudioLeashContext : ApplicationContext
 
     /// <summary>
     /// Rebuilds the context menu with the current list of active playback devices.
-    /// Called on every left-click and after any device switch.
+    /// Called on every menu open and after any device switch.
     /// </summary>
     private void RefreshDeviceList()
     {
