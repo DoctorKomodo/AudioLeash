@@ -8,7 +8,7 @@ ALWAYS: Update README.md when changes affect user-facing behaviour, features, se
 
 # PROJECT OVERVIEW
 
-**AudioLeash** is a lightweight Windows system tray application written in **C# (.NET 8)** that prevents Windows from automatically switching the user's audio output device. When external events (e.g. plugging in USB headphones) cause Windows to change the default audio device, AudioLeash detects the change and restores the user's chosen device.
+**AudioLeash** is a lightweight Windows system tray application written in **C# (.NET 10)** that prevents Windows from automatically switching the user's audio output device. When external events (e.g. plugging in USB headphones) cause Windows to change the default audio device, AudioLeash detects the change and restores the user's chosen device.
 
 The application runs headlessly — no main window — and lives entirely in the Windows notification area (system tray).
 
@@ -16,7 +16,7 @@ The application runs headlessly — no main window — and lives entirely in the
 
 | Layer | Technology |
 |---|---|
-| Language | C# 12 (.NET 8) |
+| Language | C# 14 (.NET 10) |
 | UI | Windows Forms (WinForms) — system tray only |
 | Audio API | NAudio.Wasapi 2.2.1 (`MMDeviceEnumerator`, `IMMNotificationClient`) |
 | Default device | `PolicyConfigClient.cs` (self-contained COM interop, ~110 lines) |
@@ -146,7 +146,7 @@ Prefer context7 over guessing API shapes — library APIs (especially NAudio) ch
 
 Before starting any non-trivial implementation, consider whether a web search would be valuable:
 
-- **Coding patterns**: Search for established C#/.NET patterns for the problem (e.g. "C# system tray application best practices .NET 8").
+- **Coding patterns**: Search for established C#/.NET patterns for the problem (e.g. "C# system tray application best practices .NET 10").
 - **UI/UX design**: Search for Windows tray application UX guidelines before making UI decisions.
 - **NuGet packages**: Search for existing packages that solve the requirement before writing custom code.
 - **Security**: If the feature touches registry, file system, or inter-process communication, search for Windows security guidance.
@@ -174,7 +174,7 @@ Before starting any non-trivial implementation, consider whether a web search wo
 
 ## Windows-Specific
 
-- The app targets Windows only (`net8.0-windows`) — do not add cross-platform abstractions.
+- The app targets Windows only (`net10.0-windows`) — do not add cross-platform abstractions.
 - When interacting with Win32 / COM APIs, always check return values and `Marshal.GetLastWin32Error()`.
 - Test device-change handling with both USB and Bluetooth devices where possible, as their event behaviour differs.
 

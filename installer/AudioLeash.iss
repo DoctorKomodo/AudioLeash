@@ -86,14 +86,14 @@ Filename: "taskkill"; \
 
 [Code]
 // ---------------------------------------------------------------------------
-// .NET 8 Windows Desktop Runtime check
+// .NET 10 Windows Desktop Runtime check
 // ---------------------------------------------------------------------------
-// dotnet writes a subkey per installed version under this path (e.g. "8.0.10").
+// dotnet writes a subkey per installed version under this path (e.g. "10.0.0").
 const
   DotNetRegKey =
     'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App';
 
-function IsDotNet8Installed(): Boolean;
+function IsDotNet10Installed(): Boolean;
 var
   Names: TArrayOfString;
   I:     Integer;
@@ -102,8 +102,8 @@ begin
   if not RegGetSubkeyNames(HKLM, DotNetRegKey, Names) then Exit;
   for I := 0 to GetArrayLength(Names) - 1 do
   begin
-    // Version subkeys start with "8." (e.g. "8.0.10", "8.0.14").
-    if Pos('8.', Names[I]) = 1 then
+    // Version subkeys start with "10." (e.g. "10.0.0", "10.0.1").
+    if Pos('10.', Names[I]) = 1 then
     begin
       Result := True;
       Exit;
@@ -114,14 +114,14 @@ end;
 function InitializeSetup(): Boolean;
 begin
   Result := True;
-  if not IsDotNet8Installed() then
+  if not IsDotNet10Installed() then
   begin
     if MsgBox(
-        '.NET 8 Windows Desktop Runtime is required but does not appear to be installed.'
+        '.NET 10 Windows Desktop Runtime is required but does not appear to be installed.'
         + #13#10#13#10
         + 'Download it from:'
         + #13#10
-        + 'https://dotnet.microsoft.com/en-us/download/dotnet/8.0'
+        + 'https://dotnet.microsoft.com/en-us/download/dotnet/10.0'
         + #13#10#13#10
         + 'Install it first, then run this installer again.'
         + #13#10#13#10

@@ -13,7 +13,7 @@
 .NOTES
     Prerequisites
     -------------
-    .NET 8 SDK     https://dotnet.microsoft.com/download/dotnet/8
+    .NET 10 SDK    https://dotnet.microsoft.com/download/dotnet/10
     Inno Setup 6   https://jrsoftware.org/isinfo.php
 #>
 
