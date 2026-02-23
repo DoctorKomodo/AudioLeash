@@ -155,7 +155,7 @@ AudioLeash/
 - **Profiles** — Named profiles that switch multiple devices (playback + recording) together. Could also address the boot-time race condition where a saved device hasn't finished initialising when the app starts — a profile-aware restore could defer until the target device comes online.
 - **Per-app routing** — Use Windows 10+ per-application audio settings where supported.
 - ~~**Settings persistence**~~ — ✔ Implemented (JSON file in `%AppData%\AudioLeash\`).
-- **Tooltip on hover** — Show the currently selected device name in the tray icon tooltip.
+- ~~**Tooltip on hover**~~ — ✔ Implemented (tray icon tooltip shows the selected device name, or "No device selected" when none is chosen).
 - ~~**Dark mode menu**~~ — ✔ Implemented (context menu automatically uses a dark palette when Windows is in dark theme; updates live when the user changes the setting).
 - **Volume indicator** — Show or control master volume from the tray menu.
 - ~~**Single-instance enforcement**~~ — ✔ Implemented (named `Mutex` in `Program.cs`; second instance exits silently).
