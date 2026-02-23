@@ -11,7 +11,7 @@ Keeps Windows on a leash — a lightweight system tray app that stops Windows fr
 
 ### Requirements
 - Windows 10 or 11
-- .NET 8 SDK (to build) or .NET 8 Runtime (to run)
+- .NET 10 SDK (to build) or .NET 10 Runtime (to run)
 
 ### Build
 ```
@@ -20,7 +20,7 @@ dotnet build AudioLeash.sln -c Release
 
 ### Run
 ```
-AudioLeash\bin\Release\net8.0-windows\AudioLeash.exe
+AudioLeash\bin\Release\net10.0-windows\AudioLeash.exe
 ```
 
 No window appears — the app lives entirely in the system notification area (tray).
@@ -30,7 +30,7 @@ No window appears — the app lives entirely in the system notification area (tr
 Produces `installer\Output\AudioLeash-Setup.exe` — a single-file Windows installer that requires no admin rights.
 
 **Prerequisites (one-time setup):**
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10)
 - [Inno Setup 6](https://jrsoftware.org/isinfo.php)
 
 **Run from the repo root (PowerShell):**
@@ -39,7 +39,7 @@ Produces `installer\Output\AudioLeash-Setup.exe` — a single-file Windows insta
 ```
 
 The installer:
-- Checks for the [.NET 8 Windows Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) and warns if it is absent
+- Checks for the [.NET 10 Windows Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) and warns if it is absent
 - Installs to `%LOCALAPPDATA%\AudioLeash` (no UAC prompt)
 - Adds a Start Menu entry
 - Offers an optional "Start with Windows" checkbox (enabled by default), which pre-sets the same registry key that the tray menu's own toggle manages
