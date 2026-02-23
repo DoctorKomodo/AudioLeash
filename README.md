@@ -91,30 +91,27 @@ The installer:
 - After clearing, the app will no longer attempt to restore any device when Windows changes the default.
 - The item is greyed out when no device is selected.
 
-### 9. Manual Refresh
-- A **"Refresh List"** menu item re-queries and rebuilds the device list on demand, useful if a device was connected/disconnected while the menu was already open.
-
-### 10. Thread Safety
+### 9. Thread Safety
 - `IMMNotificationClient` callbacks arrive on a Windows COM audio thread.
 - All UI updates (balloon tips, menu refresh) are marshalled back to the UI thread via `Control.InvokeRequired` / `Control.Invoke`.
 
-### 11. Clean Exit
+### 10. Clean Exit
 - The **"Exit"** menu item hides the tray icon and terminates the application.
 - All resources (`NotifyIcon`, `ContextMenuStrip`, `CoreAudioController`) are properly disposed.
 
-### 12. Start with Windows
+### 11. Start with Windows
 - A **"Start with Windows"** item in the tray menu registers or removes AudioLeash from the Windows `HKCU\...\Run` registry key.
 - A checkmark indicates it is currently registered.
 - Clicking the item toggles registration on or off.
 
-### 13. Dark Mode Menu
+### 12. Dark Mode Menu
 
 - The tray context menu automatically adapts its colour scheme to the Windows colour theme.
 - When Windows is in **dark mode** the menu uses a dark background (`#1F1F1F`) with light text, a subtle highlight on hover, and a muted separator.
 - When Windows is in **light mode** the menu reverts to the standard WinForms appearance.
 - The renderer updates **live** — if the user switches theme in Windows Settings while AudioLeash is running, the next menu open reflects the new theme immediately; no restart required.
 
-### 14. Settings Persistence
+### 13. Settings Persistence
 - The user-selected audio device is saved to `%AppData%\AudioLeash\settings.json`.
 - On first launch (no settings file), a balloon tip prompts the user to select a device from the tray menu — the app is passive until a device is chosen explicitly.
 - On subsequent launches, AudioLeash restores the saved selection automatically (if the device is still available); if the saved device is not found, the selection is cleared and the user is notified.
