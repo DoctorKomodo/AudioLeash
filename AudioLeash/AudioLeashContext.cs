@@ -69,6 +69,7 @@ public sealed class AudioLeashContext : ApplicationContext
 
         if (savedId is null)
         {
+            UpdateTrayTooltip(null);
             if (!_settingsService.HasSettingsFile)
             {
                 // Settings file does not exist yet — genuine first run.
@@ -85,8 +86,9 @@ public sealed class AudioLeashContext : ApplicationContext
         else
         {
             var active = _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToList();
-            bool available = active.Any(d => d.ID == savedId);
-            string? savedName = active.FirstOrDefault(d => d.ID == savedId)?.FriendlyName;
+            var savedDevice = active.FirstOrDefault(d => d.ID == savedId);
+            bool available = savedDevice is not null;
+            string? savedName = savedDevice?.FriendlyName;
             foreach (var d in active) d.Dispose();
 
             if (available)
@@ -294,6 +296,7 @@ public sealed class AudioLeashContext : ApplicationContext
                 SafeInvoke(() =>
                 {
                     _settingsService.SaveSelectedDeviceId(null);
+                    UpdateTrayTooltip(null);
                     _trayIcon.ShowBalloonTip(
                         timeout:  3000,
                         tipTitle: "Audio Device Unavailable",
