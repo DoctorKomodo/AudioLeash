@@ -69,55 +69,19 @@ public sealed class AudioLeashContext : ApplicationContext
         _settingsService = new SettingsService();
         _startupService  = new StartupService();
 
-        // Restore playback device selection.
+        // Restore saved device selections (playback and capture).
         string? savedPlaybackId = _settingsService.LoadSelectedPlaybackDeviceId();
-        bool showWelcome = false;
-        bool playbackNotFound = false;
+        string? savedCaptureId  = _settingsService.LoadSelectedCaptureDeviceId();
+        bool isFirstRun = savedPlaybackId is null && !_settingsService.HasSettingsFile;
 
-        if (savedPlaybackId is null)
-        {
-            if (!_settingsService.HasSettingsFile)
-                showWelcome = true;
-        }
-        else
-        {
-            var active = _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToList();
-            bool available = active.Any(d => d.ID == savedPlaybackId);
-            foreach (var d in active) d.Dispose();
-
-            if (available)
-            {
-                _selection.SelectDevice(savedPlaybackId);
-            }
-            else
-            {
-                _settingsService.SaveSelectedPlaybackDeviceId(null);
-                playbackNotFound = true;
-            }
-        }
-
-        // Restore capture (recording) device selection.
-        string? savedCaptureId = _settingsService.LoadSelectedCaptureDeviceId();
-        if (savedCaptureId is not null)
-        {
-            var activeCaptureDevices = _enumerator
-                .EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active).ToList();
-            bool captureAvailable = activeCaptureDevices.Any(d => d.ID == savedCaptureId);
-            foreach (var d in activeCaptureDevices) d.Dispose();
-
-            if (captureAvailable)
-            {
-                _captureSelection.SelectDevice(savedCaptureId);
-            }
-            else
-            {
-                _settingsService.SaveSelectedCaptureDeviceId(null);
-            }
-        }
+        bool playbackRestored = TryRestoreSavedDevice(DataFlow.Render, _selection, savedPlaybackId);
+        bool captureRestored  = TryRestoreSavedDevice(DataFlow.Capture, _captureSelection, savedCaptureId);
+        bool playbackNotFound = savedPlaybackId is not null && !playbackRestored;
+        bool captureNotFound  = savedCaptureId is not null && !captureRestored;
 
         UpdateTrayTooltip();
 
-        if (showWelcome)
+        if (isFirstRun)
         {
             _trayIcon.ShowBalloonTip(
                 timeout:  4000,
@@ -125,16 +89,49 @@ public sealed class AudioLeashContext : ApplicationContext
                 tipText:  "Click the tray icon and select a device to enable auto-restore.",
                 tipIcon:  ToolTipIcon.Info);
         }
-        else if (playbackNotFound)
+        else if (playbackNotFound || captureNotFound)
         {
+            string detail = (playbackNotFound, captureNotFound) switch
+            {
+                (true, true)   => "Your saved playback and recording devices were",
+                (true, false)  => "Your saved playback device was",
+                (false, true)  => "Your saved recording device was",
+                _              => "Your saved device was", // unreachable
+            };
             _trayIcon.ShowBalloonTip(
                 timeout:  4000,
                 tipTitle: "Saved Device Not Found",
-                tipText:  "Your saved audio device was not found. Select a device from the tray menu to re-enable auto-restore.",
+                tipText:  $"{detail} not found. Select a device from the tray menu to re-enable auto-restore.",
                 tipIcon:  ToolTipIcon.Info);
         }
 
         RefreshDeviceList();
+    }
+
+    /// <summary>
+    /// Attempts to restore a previously saved device selection for the given flow.
+    /// Returns <c>true</c> if the device was found and selected, <c>false</c> otherwise.
+    /// When the device is not found, the persisted selection is cleared.
+    /// </summary>
+    private bool TryRestoreSavedDevice(DataFlow flow, DeviceSelectionState selection, string? savedId)
+    {
+        if (savedId is null) return false;
+
+        var active = _enumerator.EnumerateAudioEndPoints(flow, DeviceState.Active).ToList();
+        bool available = active.Any(d => d.ID == savedId);
+        foreach (var d in active) d.Dispose();
+
+        if (available)
+        {
+            selection.SelectDevice(savedId);
+            return true;
+        }
+
+        if (flow == DataFlow.Render)
+            _settingsService.SaveSelectedPlaybackDeviceId(null);
+        else
+            _settingsService.SaveSelectedCaptureDeviceId(null);
+        return false;
     }
 
     private void TrayIcon_MouseClick(object? sender, MouseEventArgs e)
@@ -371,9 +368,19 @@ public sealed class AudioLeashContext : ApplicationContext
                 break;
 
             case RestoreDecision.Restore:
+                // Set the flag on the audio thread BEFORE dispatching to the UI thread.
+                // This prevents a second OnDefaultDeviceChanged from triggering another
+                // restore attempt during the roundtrip to the UI thread.
                 selection.IsInternalChange = true;
                 string restoreId = selection.SelectedDeviceId!;
 
+                // CPolicyConfigClient is an STA COM object with no registered proxy/stub.
+                // Calling it from the audio COM thread (a different apartment) causes an
+                // InvalidCastException. Marshal the call to the UI STA thread instead.
+                // SafeInvoke uses Control.Invoke (synchronous), so the audio thread
+                // blocks here until the UI thread finishes and resets the flag.
+                // The outer try/catch ensures the flag is cleared even if SafeInvoke
+                // itself throws (e.g. ObjectDisposedException during shutdown).
                 try
                 {
                     SafeInvoke(() =>
