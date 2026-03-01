@@ -20,6 +20,7 @@ public sealed class AudioLeashContext : ApplicationContext
     private readonly MMDeviceEnumerator      _enumerator;
     private readonly PolicyConfigClient      _policyConfig;
     private readonly DeviceSelectionState    _selection;
+    private readonly DeviceSelectionState    _captureSelection;
     private readonly AudioNotificationClient _notificationClient;
     private readonly SettingsService         _settingsService;
     private readonly StartupService          _startupService;
@@ -28,8 +29,9 @@ public sealed class AudioLeashContext : ApplicationContext
     {
         _enumerator   = new MMDeviceEnumerator();
         _policyConfig = new PolicyConfigClient();
-        _selection    = new DeviceSelectionState();
-        _contextMenu  = new ContextMenuStrip();
+        _selection        = new DeviceSelectionState();
+        _captureSelection = new DeviceSelectionState();
+        _contextMenu      = new ContextMenuStrip();
         ApplyTheme();
 
         _trayIcon = new NotifyIcon
@@ -108,6 +110,21 @@ public sealed class AudioLeashContext : ApplicationContext
                     tipText:  "Your saved audio device was not found. Select a device from the tray menu to re-enable auto-restore.",
                     tipIcon:  ToolTipIcon.Info);
             }
+        }
+
+        // Restore capture (recording) device selection.
+        string? savedCaptureId = _settingsService.LoadSelectedCaptureDeviceId();
+        if (savedCaptureId is not null)
+        {
+            var activeCaptureDevices = _enumerator
+                .EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active).ToList();
+            bool captureAvailable = activeCaptureDevices.Any(d => d.ID == savedCaptureId);
+            foreach (var d in activeCaptureDevices) d.Dispose();
+
+            if (captureAvailable)
+                _captureSelection.SelectDevice(savedCaptureId);
+            else
+                _settingsService.SaveSelectedCaptureDeviceId(null);
         }
 
         RefreshDeviceList();
@@ -269,18 +286,20 @@ public sealed class AudioLeashContext : ApplicationContext
     /// </summary>
     private void OnDefaultDeviceChanged(DataFlow flow, string newDefaultId)
     {
-        if (flow != DataFlow.Render) return;
+        var selection = flow == DataFlow.Render ? _selection : _captureSelection;
+
         bool isSelectedAvailable = false;
-        if (_selection.SelectedDeviceId is not null)
+        if (selection.SelectedDeviceId is not null)
         {
             var activeDevices = _enumerator
-                .EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
+                .EnumerateAudioEndPoints(flow, DeviceState.Active)
                 .ToList();
-            isSelectedAvailable = activeDevices.Any(d => d.ID == _selection.SelectedDeviceId);
+            isSelectedAvailable = activeDevices.Any(d => d.ID == selection.SelectedDeviceId);
             foreach (var d in activeDevices) d.Dispose();
         }
 
-        var decision = _selection.EvaluateDefaultChange(newDefaultId, isSelectedAvailable);
+        var decision = selection.EvaluateDefaultChange(newDefaultId, isSelectedAvailable);
+        string flowLabel = flow == DataFlow.Render ? "Audio Device" : "Recording Device";
 
         switch (decision)
         {
@@ -288,34 +307,27 @@ public sealed class AudioLeashContext : ApplicationContext
                 return;
 
             case RestoreDecision.ClearSelection:
-                _selection.ClearSelection();
+                selection.ClearSelection();
                 SafeInvoke(() =>
                 {
-                    _settingsService.SaveSelectedDeviceId(null);
+                    if (flow == DataFlow.Render)
+                        _settingsService.SaveSelectedPlaybackDeviceId(null);
+                    else
+                        _settingsService.SaveSelectedCaptureDeviceId(null);
                     UpdateTrayTooltip(null);
                     _trayIcon.ShowBalloonTip(
                         timeout:  3000,
-                        tipTitle: "Audio Device Unavailable",
-                        tipText:  "Your selected device is no longer available. Selection cleared.",
+                        tipTitle: $"{flowLabel} Unavailable",
+                        tipText:  $"Your selected {flowLabel.ToLower()} is no longer available. Selection cleared.",
                         tipIcon:  ToolTipIcon.Warning);
                     RefreshDeviceList();
                 });
                 break;
 
             case RestoreDecision.Restore:
-                // Set the flag on the audio thread BEFORE dispatching to the UI thread.
-                // This prevents a second OnDefaultDeviceChanged from triggering another
-                // restore attempt during the roundtrip to the UI thread.
-                _selection.IsInternalChange = true;
-                string restoreId = _selection.SelectedDeviceId!;
+                selection.IsInternalChange = true;
+                string restoreId = selection.SelectedDeviceId!;
 
-                // CPolicyConfigClient is an STA COM object with no registered proxy/stub.
-                // Calling it from the audio COM thread (a different apartment) causes an
-                // InvalidCastException. Marshal the call to the UI STA thread instead.
-                // SafeInvoke uses Control.Invoke (synchronous), so the audio thread
-                // blocks here until the UI thread finishes and resets the flag.
-                // The outer try/finally ensures the flag is cleared even if SafeInvoke
-                // itself throws (e.g. ObjectDisposedException during shutdown).
                 try
                 {
                     SafeInvoke(() =>
@@ -325,16 +337,17 @@ public sealed class AudioLeashContext : ApplicationContext
                             _policyConfig.SetDefaultEndpoint(restoreId);
 
                             var restoreDevices = _enumerator
-                                .EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
+                                .EnumerateAudioEndPoints(flow, DeviceState.Active)
                                 .ToList();
-                            string restoredName = restoreDevices.FirstOrDefault(d => d.ID == restoreId)?.FriendlyName ?? restoreId;
+                            string restoredName = restoreDevices
+                                .FirstOrDefault(d => d.ID == restoreId)?.FriendlyName ?? restoreId;
                             foreach (var d in restoreDevices) d.Dispose();
 
                             UpdateTrayTooltip(restoredName);
 
                             _trayIcon.ShowBalloonTip(
                                 timeout:  3000,
-                                tipTitle: "Audio Device Restored",
+                                tipTitle: $"{flowLabel} Restored",
                                 tipText:  $"Switched back to: {restoredName}",
                                 tipIcon:  ToolTipIcon.Info);
                             RefreshDeviceList();
@@ -344,18 +357,18 @@ public sealed class AudioLeashContext : ApplicationContext
                             _trayIcon.ShowBalloonTip(
                                 timeout:  3000,
                                 tipTitle: "Restore Failed",
-                                tipText:  $"Could not restore audio device:\n{ex.Message}",
+                                tipText:  $"Could not restore {flowLabel.ToLower()}:\n{ex.Message}",
                                 tipIcon:  ToolTipIcon.Error);
                         }
                         finally
                         {
-                            _selection.IsInternalChange = false;
+                            selection.IsInternalChange = false;
                         }
                     });
                 }
                 catch
                 {
-                    _selection.IsInternalChange = false;
+                    selection.IsInternalChange = false;
                 }
                 break;
         }
