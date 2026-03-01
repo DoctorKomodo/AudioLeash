@@ -24,6 +24,7 @@ public sealed class AudioLeashContext : ApplicationContext
     private readonly AudioNotificationClient _notificationClient;
     private readonly SettingsService         _settingsService;
     private readonly StartupService          _startupService;
+    private readonly Font                    _sectionHeaderFont;
 
     public AudioLeashContext()
     {
@@ -32,6 +33,7 @@ public sealed class AudioLeashContext : ApplicationContext
         _selection        = new DeviceSelectionState();
         _captureSelection = new DeviceSelectionState();
         _contextMenu      = new ContextMenuStrip();
+        _sectionHeaderFont = new Font(_contextMenu.Font, FontStyle.Bold);
         ApplyTheme();
 
         _trayIcon = new NotifyIcon
@@ -206,7 +208,7 @@ public sealed class AudioLeashContext : ApplicationContext
         var header = new ToolStripMenuItem(sectionLabel)
         {
             Enabled = false,
-            Font = new Font(_contextMenu.Font, FontStyle.Bold),
+            Font = _sectionHeaderFont,
         };
         _contextMenu.Items.Add(header);
         _contextMenu.Items.Add(new ToolStripSeparator());
@@ -448,8 +450,8 @@ public sealed class AudioLeashContext : ApplicationContext
 
     private void UpdateTrayTooltip()
     {
-        string? playbackName = GetDeviceName(DataFlow.Render, _selection.SelectedDeviceId);
-        string? captureName  = GetDeviceName(DataFlow.Capture, _captureSelection.SelectedDeviceId);
+        string? playbackName = GetDeviceName(_selection.SelectedDeviceId);
+        string? captureName  = GetDeviceName(_captureSelection.SelectedDeviceId);
 
         string text;
         if (playbackName is null && captureName is null)
@@ -464,17 +466,15 @@ public sealed class AudioLeashContext : ApplicationContext
         _trayIcon.Text = text.Length > 63 ? text[..62] + "…" : text;
     }
 
-    private string? GetDeviceName(DataFlow flow, string? deviceId)
+    private string? GetDeviceName(string? deviceId)
     {
         if (deviceId is null) return null;
         try
         {
-            var devices = _enumerator.EnumerateAudioEndPoints(flow, DeviceState.Active).ToList();
-            string? name = devices.FirstOrDefault(d => d.ID == deviceId)?.FriendlyName;
-            foreach (var d in devices) d.Dispose();
-            return name;
+            using var device = _enumerator.GetDevice(deviceId);
+            return device.State == DeviceState.Active ? device.FriendlyName : null;
         }
-        catch { return null; }
+        catch (Exception) { return null; }
     }
 
     private static Icon GetTrayIcon()
@@ -514,6 +514,7 @@ public sealed class AudioLeashContext : ApplicationContext
                 }
             }
 
+            _sectionHeaderFont.Dispose();
             _trayIcon.Dispose();
             _contextMenu.Dispose();
             _enumerator.Dispose();
