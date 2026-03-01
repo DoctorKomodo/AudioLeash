@@ -265,10 +265,11 @@ public sealed class AudioLeashContext : ApplicationContext
 
     /// <summary>
     /// Called by <see cref="AudioNotificationClient"/> on a Windows audio thread
-    /// when the system default playback device changes.
+    /// when the system default device changes for either playback or capture.
     /// </summary>
-    private void OnDefaultDeviceChanged(string newDefaultId)
+    private void OnDefaultDeviceChanged(DataFlow flow, string newDefaultId)
     {
+        if (flow != DataFlow.Render) return;
         bool isSelectedAvailable = false;
         if (_selection.SelectedDeviceId is not null)
         {
@@ -443,18 +444,18 @@ public sealed class AudioLeashContext : ApplicationContext
     /// </summary>
     private sealed class AudioNotificationClient : IMMNotificationClient
     {
-        private readonly Action<string> _onDefaultChanged;
+        private readonly Action<DataFlow, string> _onDefaultChanged;
 
-        internal AudioNotificationClient(Action<string> onDefaultChanged)
+        internal AudioNotificationClient(Action<DataFlow, string> onDefaultChanged)
             => _onDefaultChanged = onDefaultChanged;
 
         public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)
         {
-            // Only react to playback default changing for Multimedia role.
-            // Windows fires this for Console, Multimedia, and Communications separately --
-            // filtering to Multimedia prevents triple-firing.
-            if (flow == DataFlow.Render && role == Role.Multimedia)
-                _onDefaultChanged(defaultDeviceId);
+            // Only react to Multimedia role changes for both Render (playback) and
+            // Capture (recording). Windows fires this for Console, Multimedia, and
+            // Communications separately -- filtering to Multimedia prevents triple-firing.
+            if (role == Role.Multimedia && (flow == DataFlow.Render || flow == DataFlow.Capture))
+                _onDefaultChanged(flow, defaultDeviceId);
         }
 
         // Required by IMMNotificationClient; AudioLeash does not act on these.
