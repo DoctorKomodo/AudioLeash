@@ -72,7 +72,7 @@ public sealed class AudioLeashContext : ApplicationContext
 
         if (savedId is null)
         {
-            UpdateTrayTooltip(null);
+            UpdateTrayTooltip();
             if (!_settingsService.HasSettingsFile)
             {
                 // Settings file does not exist yet — genuine first run.
@@ -89,21 +89,19 @@ public sealed class AudioLeashContext : ApplicationContext
         else
         {
             var active = _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToList();
-            var savedDevice = active.FirstOrDefault(d => d.ID == savedId);
-            bool available = savedDevice is not null;
-            string? savedName = savedDevice?.FriendlyName;
+            bool available = active.Any(d => d.ID == savedId);
             foreach (var d in active) d.Dispose();
 
             if (available)
             {
                 _selection.SelectDevice(savedId);
-                UpdateTrayTooltip(savedName);
+                UpdateTrayTooltip();
             }
             else
             {
                 // Saved device is not connected. Clear persisted selection and notify the user.
                 _settingsService.SaveSelectedDeviceId(null);
-                UpdateTrayTooltip(null);
+                UpdateTrayTooltip();
                 _trayIcon.ShowBalloonTip(
                     timeout:  4000,
                     tipTitle: "Saved Device Not Found",
@@ -142,57 +140,36 @@ public sealed class AudioLeashContext : ApplicationContext
     }
 
     /// <summary>
-    /// Rebuilds the context menu with the current list of active playback devices.
+    /// Rebuilds the context menu with the current list of active playback and recording devices.
     /// Called on every menu open and after any device switch.
     /// </summary>
     private void RefreshDeviceList()
     {
         foreach (ToolStripItem item in _contextMenu.Items)
         {
-            if (item is ToolStripMenuItem { Tag: MMDevice d })
-                d.Dispose();
+            if (item is ToolStripMenuItem mi)
+            {
+                if (mi.Tag is (MMDevice d, DataFlow _))
+                    d.Dispose();
+                else if (mi.Tag is MMDevice d2)
+                    d2.Dispose();
+            }
         }
         _contextMenu.Items.Clear();
 
-        var devices = _enumerator
-            .EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
-            .OrderBy(d => d.FriendlyName)
-            .ToList();
+        // ── Playback section ────────────────────────────────────────────
+        AddDeviceSection(DataFlow.Render, "Playback", _selection);
 
-        // Seed the selection with whatever Windows currently uses as the default.
-        using var defaultDevice = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-        string? defaultId = defaultDevice?.ID;
+        // ── Recording section ───────────────────────────────────────────
+        AddDeviceSection(DataFlow.Capture, "Recording", _captureSelection);
 
-        if (devices.Count == 0)
-        {
-            _contextMenu.Items.Add(new ToolStripMenuItem("No devices available") { Enabled = false });
-        }
-        else
-        {
-            foreach (var device in devices)
-            {
-                bool isUserSelected   = _selection.SelectedDeviceId == device.ID;
-                bool isWindowsDefault = defaultId == device.ID;
-
-                string label = device.FriendlyName;
-                if (isWindowsDefault && !isUserSelected)
-                    label += "  (Windows default)";
-
-                var menuItem = new ToolStripMenuItem(label)
-                {
-                    Tag     = device,
-                    Checked = isUserSelected,
-                };
-                menuItem.Click += DeviceMenuItem_Click;
-                _contextMenu.Items.Add(menuItem);
-            }
-        }
-
+        // ── Actions ─────────────────────────────────────────────────────
         _contextMenu.Items.Add(new ToolStripSeparator());
 
         var clearItem = new ToolStripMenuItem("Clear Selection  (disable auto-restore)")
         {
-            Enabled = _selection.SelectedDeviceId is not null,
+            Enabled = _selection.SelectedDeviceId is not null
+                   || _captureSelection.SelectedDeviceId is not null,
         };
         clearItem.Click += ClearSelection_Click;
         _contextMenu.Items.Add(clearItem);
@@ -213,27 +190,86 @@ public sealed class AudioLeashContext : ApplicationContext
         _contextMenu.Items.Add(exitItem);
     }
 
+    private void AddDeviceSection(
+        DataFlow flow,
+        string sectionLabel,
+        DeviceSelectionState selection)
+    {
+        // Bold section header (non-clickable)
+        var header = new ToolStripMenuItem(sectionLabel)
+        {
+            Enabled = false,
+            Font = new Font(_contextMenu.Font, FontStyle.Bold),
+        };
+        _contextMenu.Items.Add(header);
+        _contextMenu.Items.Add(new ToolStripSeparator());
+
+        var devices = _enumerator
+            .EnumerateAudioEndPoints(flow, DeviceState.Active)
+            .OrderBy(d => d.FriendlyName)
+            .ToList();
+
+        MMDevice? defaultDevice = null;
+        try { defaultDevice = _enumerator.GetDefaultAudioEndpoint(flow, Role.Multimedia); }
+        catch (System.Runtime.InteropServices.COMException) { /* no default device for this flow */ }
+        string? defaultId = defaultDevice?.ID;
+        defaultDevice?.Dispose();
+
+        if (devices.Count == 0)
+        {
+            _contextMenu.Items.Add(new ToolStripMenuItem("No devices available") { Enabled = false });
+        }
+        else
+        {
+            foreach (var device in devices)
+            {
+                bool isUserSelected   = selection.SelectedDeviceId == device.ID;
+                bool isWindowsDefault = defaultId == device.ID;
+
+                string label = device.FriendlyName;
+                if (isWindowsDefault && !isUserSelected)
+                    label += "  (Windows default)";
+
+                var menuItem = new ToolStripMenuItem(label)
+                {
+                    Tag     = (device, flow),
+                    Checked = isUserSelected,
+                };
+                menuItem.Click += DeviceMenuItem_Click;
+                _contextMenu.Items.Add(menuItem);
+            }
+        }
+    }
+
     private void DeviceMenuItem_Click(object? sender, EventArgs e)
     {
-        if (sender is not ToolStripMenuItem { Tag: MMDevice device })
-            return;
+        if (sender is not ToolStripMenuItem menuItem) return;
+        if (menuItem.Tag is not (MMDevice device, DataFlow flow)) return;
+
+        var selection = flow == DataFlow.Render ? _selection : _captureSelection;
 
         try
         {
-            _selection.IsInternalChange = true;
+            selection.IsInternalChange = true;
 
             string deviceId   = device.ID;
             string deviceName = device.FriendlyName;
             _policyConfig.SetDefaultEndpoint(deviceId);
 
-            _selection.SelectDevice(deviceId);
-            UpdateTrayTooltip(deviceName);
-            _settingsService.SaveSelectedDeviceId(deviceId);
+            selection.SelectDevice(deviceId);
 
+            if (flow == DataFlow.Render)
+                _settingsService.SaveSelectedPlaybackDeviceId(deviceId);
+            else
+                _settingsService.SaveSelectedCaptureDeviceId(deviceId);
+
+            UpdateTrayTooltip();
+
+            string flowLabel = flow == DataFlow.Render ? "output" : "input";
             _trayIcon.ShowBalloonTip(
                 timeout:  2500,
-                tipTitle: "Audio Device Selected",
-                tipText:  $"Default output: {deviceName}\n\nAuto-restore is now active.",
+                tipTitle: flow == DataFlow.Render ? "Audio Device Selected" : "Recording Device Selected",
+                tipText:  $"Default {flowLabel}: {deviceName}\n\nAuto-restore is now active.",
                 tipIcon:  ToolTipIcon.Info);
 
             RefreshDeviceList();
@@ -244,15 +280,16 @@ public sealed class AudioLeashContext : ApplicationContext
         }
         finally
         {
-            _selection.IsInternalChange = false;
+            selection.IsInternalChange = false;
         }
     }
 
     private void ClearSelection_Click(object? sender, EventArgs e)
     {
         _selection.ClearSelection();
-        UpdateTrayTooltip(null);
-        _settingsService.SaveSelectedDeviceId(null);
+        _captureSelection.ClearSelection();
+        _settingsService.SaveSelectedDeviceIds(null, null);
+        UpdateTrayTooltip();
 
         _trayIcon.ShowBalloonTip(
             timeout:  2500,
@@ -314,7 +351,7 @@ public sealed class AudioLeashContext : ApplicationContext
                         _settingsService.SaveSelectedPlaybackDeviceId(null);
                     else
                         _settingsService.SaveSelectedCaptureDeviceId(null);
-                    UpdateTrayTooltip(null);
+                    UpdateTrayTooltip();
                     _trayIcon.ShowBalloonTip(
                         timeout:  3000,
                         tipTitle: $"{flowLabel} Unavailable",
@@ -343,7 +380,7 @@ public sealed class AudioLeashContext : ApplicationContext
                                 .FirstOrDefault(d => d.ID == restoreId)?.FriendlyName ?? restoreId;
                             foreach (var d in restoreDevices) d.Dispose();
 
-                            UpdateTrayTooltip(restoredName);
+                            UpdateTrayTooltip();
 
                             _trayIcon.ShowBalloonTip(
                                 timeout:  3000,
@@ -402,12 +439,35 @@ public sealed class AudioLeashContext : ApplicationContext
     private static void ShowError(string message) =>
         MessageBox.Show(message, "AudioLeash", MessageBoxButtons.OK, MessageBoxIcon.Error);
 
-    private void UpdateTrayTooltip(string? deviceName)
+    private void UpdateTrayTooltip()
     {
-        string text = deviceName is null
-            ? "AudioLeash — No device selected"
-            : $"AudioLeash — {deviceName}";
+        string? playbackName = GetDeviceName(DataFlow.Render, _selection.SelectedDeviceId);
+        string? captureName  = GetDeviceName(DataFlow.Capture, _captureSelection.SelectedDeviceId);
+
+        string text;
+        if (playbackName is null && captureName is null)
+            text = "AudioLeash";
+        else if (captureName is null)
+            text = $"AudioLeash\nPlayback: {playbackName}";
+        else if (playbackName is null)
+            text = $"AudioLeash\nRecording: {captureName}";
+        else
+            text = $"AudioLeash\nPlayback: {playbackName}\nRecording: {captureName}";
+
         _trayIcon.Text = text.Length > 63 ? text[..62] + "…" : text;
+    }
+
+    private string? GetDeviceName(DataFlow flow, string? deviceId)
+    {
+        if (deviceId is null) return null;
+        try
+        {
+            var devices = _enumerator.EnumerateAudioEndPoints(flow, DeviceState.Active).ToList();
+            string? name = devices.FirstOrDefault(d => d.ID == deviceId)?.FriendlyName;
+            foreach (var d in devices) d.Dispose();
+            return name;
+        }
+        catch { return null; }
     }
 
     private static Icon GetTrayIcon()
@@ -438,8 +498,13 @@ public sealed class AudioLeashContext : ApplicationContext
 
             foreach (ToolStripItem item in _contextMenu.Items)
             {
-                if (item is ToolStripMenuItem { Tag: MMDevice d })
-                    d.Dispose();
+                if (item is ToolStripMenuItem mi)
+                {
+                    if (mi.Tag is (MMDevice d, DataFlow _))
+                        d.Dispose();
+                    else if (mi.Tag is MMDevice d2)
+                        d2.Dispose();
+                }
             }
 
             _trayIcon.Dispose();
