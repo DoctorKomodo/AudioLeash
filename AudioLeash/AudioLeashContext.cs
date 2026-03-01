@@ -67,46 +67,30 @@ public sealed class AudioLeashContext : ApplicationContext
         _settingsService = new SettingsService();
         _startupService  = new StartupService();
 
-        // Restore the previously selected device, or guide the user to pick one.
-        string? savedId = _settingsService.LoadSelectedDeviceId();
+        // Restore playback device selection.
+        string? savedPlaybackId = _settingsService.LoadSelectedPlaybackDeviceId();
+        bool showWelcome = false;
+        bool playbackNotFound = false;
 
-        if (savedId is null)
+        if (savedPlaybackId is null)
         {
-            UpdateTrayTooltip();
             if (!_settingsService.HasSettingsFile)
-            {
-                // Settings file does not exist yet — genuine first run.
-                // Prompt the user to pick a device; the app is passive until they do.
-                _trayIcon.ShowBalloonTip(
-                    timeout:  4000,
-                    tipTitle: "Welcome to AudioLeash",
-                    tipText:  "Click the tray icon and select a device to enable auto-restore.",
-                    tipIcon:  ToolTipIcon.Info);
-            }
-            // If the file exists but savedId is null, the user previously cleared their
-            // selection or their saved device was not found on a prior run — stay passive silently.
+                showWelcome = true;
         }
         else
         {
             var active = _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToList();
-            bool available = active.Any(d => d.ID == savedId);
+            bool available = active.Any(d => d.ID == savedPlaybackId);
             foreach (var d in active) d.Dispose();
 
             if (available)
             {
-                _selection.SelectDevice(savedId);
-                UpdateTrayTooltip();
+                _selection.SelectDevice(savedPlaybackId);
             }
             else
             {
-                // Saved device is not connected. Clear persisted selection and notify the user.
-                _settingsService.SaveSelectedDeviceId(null);
-                UpdateTrayTooltip();
-                _trayIcon.ShowBalloonTip(
-                    timeout:  4000,
-                    tipTitle: "Saved Device Not Found",
-                    tipText:  "Your saved audio device was not found. Select a device from the tray menu to re-enable auto-restore.",
-                    tipIcon:  ToolTipIcon.Info);
+                _settingsService.SaveSelectedPlaybackDeviceId(null);
+                playbackNotFound = true;
             }
         }
 
@@ -120,9 +104,32 @@ public sealed class AudioLeashContext : ApplicationContext
             foreach (var d in activeCaptureDevices) d.Dispose();
 
             if (captureAvailable)
+            {
                 _captureSelection.SelectDevice(savedCaptureId);
+            }
             else
+            {
                 _settingsService.SaveSelectedCaptureDeviceId(null);
+            }
+        }
+
+        UpdateTrayTooltip();
+
+        if (showWelcome)
+        {
+            _trayIcon.ShowBalloonTip(
+                timeout:  4000,
+                tipTitle: "Welcome to AudioLeash",
+                tipText:  "Click the tray icon and select a device to enable auto-restore.",
+                tipIcon:  ToolTipIcon.Info);
+        }
+        else if (playbackNotFound)
+        {
+            _trayIcon.ShowBalloonTip(
+                timeout:  4000,
+                tipTitle: "Saved Device Not Found",
+                tipText:  "Your saved audio device was not found. Select a device from the tray menu to re-enable auto-restore.",
+                tipIcon:  ToolTipIcon.Info);
         }
 
         RefreshDeviceList();
