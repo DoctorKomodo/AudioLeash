@@ -36,7 +36,7 @@ internal sealed class DeviceSelectionState
 
     /// <summary>
     /// Decides what the app should do when Windows reports that the default
-    /// playback device has changed to <paramref name="newDefaultId"/>.
+    /// audio device (playback or capture) has changed to <paramref name="newDefaultId"/>.
     /// </summary>
     /// <param name="newDefaultId">The ID of the device Windows just made the default.</param>
     /// <param name="isSelectedDeviceAvailable">

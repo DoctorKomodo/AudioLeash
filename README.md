@@ -1,6 +1,6 @@
 ﻿# AudioLeash
 
-Keeps Windows on a leash — a lightweight system tray app that stops Windows from switching your audio output without permission, and snaps it back when it tries.
+Keeps Windows on a leash — a lightweight system tray app that stops Windows from switching your audio output or input without permission, and snaps it back when it tries.
 
 
 
@@ -59,13 +59,14 @@ The installer:
 - **Left-click** or **right-click** the icon to open the device menu.
 
 ### 2. Audio Device Listing
-- On every menu open, the current list of **active (enabled) playback devices** is fetched from the Windows Core Audio API.
-- Devices are sorted alphabetically by their full display name.
-- If no active devices are found, a disabled "No devices available" item is shown.
+- On every menu open, the current list of **active (enabled) playback and recording devices** is fetched from the Windows Core Audio API.
+- Devices are shown in two sections — **Playback** and **Recording** — each with a bold header.
+- Devices are sorted alphabetically by their full display name within each section.
+- If no active devices are found for a section, a disabled "No devices available" item is shown.
 
 ### 3. Default Device Selection
 - Clicking a device in the menu:
-  - Sets it as the Windows default playback device immediately.
+  - Sets it as the Windows default playback or recording device immediately.
   - Stores its ID as the **user-selected device** for auto-restore purposes.
   - Shows a balloon tip confirming the change.
   - Refreshes the menu (checkmark moves to the newly selected device).
@@ -87,7 +88,7 @@ The installer:
 - An `isInternalChange` boolean guards against feedback loops where the app's own device switch triggers the change-monitoring handler, which would then try to switch again.
 
 ### 8. Clear Selection / Disable Auto-Restore
-- The **"Clear Selection"** menu item removes the stored device preference.
+- The **"Clear Selection"** menu item removes both playback and recording device preferences.
 - After clearing, the app will no longer attempt to restore any device when Windows changes the default.
 - The item is greyed out when no device is selected.
 
@@ -116,6 +117,14 @@ The installer:
 - On first launch (no settings file), a balloon tip prompts the user to select a device from the tray menu — the app is passive until a device is chosen explicitly.
 - On subsequent launches, AudioLeash restores the saved selection automatically (if the device is still available); if the saved device is not found, the selection is cleared and the user is notified.
 - Clearing the selection also removes the saved preference.
+
+### 14. Recording Device Support
+- The tray menu shows two sections: **Playback** devices and **Recording** (microphone) devices, each with a bold section header.
+- Users can independently lock a playback device and a recording device.
+- When Windows changes either default device (e.g. due to a USB mic being plugged in), AudioLeash detects the change and restores the user's chosen device.
+- **Clear Selection** resets both playback and recording selections.
+- The tray tooltip shows both locked device names.
+- Settings are persisted independently; existing settings from older versions are migrated automatically.
 
 ---
 
@@ -148,7 +157,7 @@ AudioLeash/
 - ~~**Windows startup**~~ — ✔ Implemented (registry `Run` key toggle in tray menu).
 - **Hotkey cycling** — Global keyboard shortcut to cycle to the next audio device.
 - **Communication device** — Also set the "default communications device" alongside the default playback device.
-- **Recording device support** — Extend to microphone/input devices.
+- ~~**Recording device support**~~ — ✔ Implemented (tray menu shows separate Playback and Recording sections; each can be locked independently).
 - **Profiles** — Named profiles that switch multiple devices (playback + recording) together. Could also address the boot-time race condition where a saved device hasn't finished initialising when the app starts — a profile-aware restore could defer until the target device comes online.
 - **Per-app routing** — Use Windows 10+ per-application audio settings where supported.
 - ~~**Settings persistence**~~ — ✔ Implemented (JSON file in `%AppData%\AudioLeash\`).

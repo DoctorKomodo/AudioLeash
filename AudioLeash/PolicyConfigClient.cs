@@ -60,8 +60,8 @@ internal class CPolicyConfigClient { }
 // ── Public wrapper ───────────────────────────────────────────────────────────
 
 /// <summary>
-/// Sets the Windows default audio playback endpoint via the undocumented
-/// <c>IPolicyConfig</c> COM interface (reverse-engineered; stable since Vista).
+/// Sets the Windows default audio endpoint (playback or recording) via the
+/// undocumented <c>IPolicyConfig</c> COM interface (reverse-engineered; stable since Vista).
 /// </summary>
 internal sealed class PolicyConfigClient
 {
@@ -76,9 +76,10 @@ internal sealed class PolicyConfigClient
     }
 
     /// <summary>
-    /// Sets <paramref name="deviceId"/> as the Windows default playback device
+    /// Sets <paramref name="deviceId"/> as the Windows default audio endpoint
     /// for all three roles (Console, Multimedia, Communications), mirroring
-    /// what the Windows sound control panel does.
+    /// what the Windows sound control panel does. Works for both playback
+    /// (render) and recording (capture) endpoints.
     /// </summary>
     /// <param name="deviceId">
     /// The <c>MMDevice.ID</c> string, e.g. <c>{0.0.0.00000000}.{guid}</c>.
