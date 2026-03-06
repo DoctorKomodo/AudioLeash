@@ -80,9 +80,12 @@ The installer:
 - If an **external change** sets a different device as the default (e.g. plugging in a USB headset causes Windows to auto-switch), the app detects this and **automatically switches back** to the user-selected device.
 - The restore is accompanied by a balloon tip notification.
 
-### 6. Graceful Handling of Unavailable Devices
-- If the user-selected device becomes unavailable (unplugged, disabled), the app **clears the selection** rather than attempting to switch to a missing device.
-- A warning balloon tip informs the user.
+### 6. Persistent Selection for Unavailable Devices
+- If the user-selected device becomes unavailable (unplugged, disabled), the app **retains the selection** and suspends enforcement rather than clearing it.
+- The tray menu shows the unavailable device as a grayed-out, checked entry with an **(unavailable)** label.
+- The tray tooltip appends **(waiting)** to indicate the device is disconnected.
+- When the device reconnects, AudioLeash **automatically restores it** as the default and shows a "Device Reconnected" balloon notification.
+- On startup, if a saved device is not currently connected, the app keeps the selection and waits for the device to appear.
 
 ### 7. Internal Change Flag (Loop Prevention)
 - An `isInternalChange` boolean guards against feedback loops where the app's own device switch triggers the change-monitoring handler, which would then try to switch again.
@@ -115,7 +118,7 @@ The installer:
 ### 13. Settings Persistence
 - The user-selected audio device is saved to `%AppData%\AudioLeash\settings.json`.
 - On first launch (no settings file), a balloon tip prompts the user to select a device from the tray menu — the app is passive until a device is chosen explicitly.
-- On subsequent launches, AudioLeash restores the saved selection automatically (if the device is still available); if the saved device is not found, the selection is cleared and the user is notified.
+- On subsequent launches, AudioLeash restores the saved selection automatically (if the device is still available); if the saved device is not currently connected, the selection is kept and enforcement resumes when the device reconnects.
 - Clearing the selection also removes the saved preference.
 
 ### 14. Recording Device Support
