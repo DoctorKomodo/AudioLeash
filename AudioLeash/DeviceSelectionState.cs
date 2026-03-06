@@ -4,7 +4,7 @@ internal enum RestoreDecision
 {
     NoAction,
     Restore,
-    ClearSelection,
+    Suspend,
 }
 
 /// <summary>
@@ -30,9 +30,31 @@ internal sealed class DeviceSelectionState
         set => _isInternalChange = value;
     }
 
-    public void SelectDevice(string deviceId) => SelectedDeviceId = deviceId;
+    private volatile bool _isDeviceAvailable = true;
 
-    public void ClearSelection() => SelectedDeviceId = null;
+    /// <summary>
+    /// Whether the currently selected device is present and active.
+    /// When <c>false</c>, enforcement is suspended until the device reconnects.
+    /// </summary>
+    public bool IsDeviceAvailable
+    {
+        get => _isDeviceAvailable;
+        private set => _isDeviceAvailable = value;
+    }
+
+    public void SetDeviceAvailability(bool available) => IsDeviceAvailable = available;
+
+    public void SelectDevice(string deviceId)
+    {
+        SelectedDeviceId = deviceId;
+        IsDeviceAvailable = true;
+    }
+
+    public void ClearSelection()
+    {
+        SelectedDeviceId = null;
+        IsDeviceAvailable = true;
+    }
 
     /// <summary>
     /// Decides what the app should do when Windows reports that the default
@@ -49,8 +71,27 @@ internal sealed class DeviceSelectionState
         if (IsInternalChange)          return RestoreDecision.NoAction;
         if (SelectedDeviceId is null)  return RestoreDecision.NoAction;
         if (newDefaultId == SelectedDeviceId) return RestoreDecision.NoAction;
-        if (!isSelectedDeviceAvailable) return RestoreDecision.ClearSelection;
+        if (!isSelectedDeviceAvailable) return RestoreDecision.Suspend;
 
         return RestoreDecision.Restore;
+    }
+
+    /// <summary>
+    /// Decides what the app should do when a device's state changes
+    /// (connected/disconnected). Returns <see cref="RestoreDecision.Restore"/>
+    /// if the selected device just became available again.
+    /// </summary>
+    public RestoreDecision EvaluateDeviceStateChange(string deviceId, bool isNowActive)
+    {
+        if (SelectedDeviceId is null)    return RestoreDecision.NoAction;
+        if (deviceId != SelectedDeviceId) return RestoreDecision.NoAction;
+
+        bool wasAvailable = IsDeviceAvailable;
+        IsDeviceAvailable = isNowActive;
+
+        if (isNowActive && !wasAvailable && !IsInternalChange)
+            return RestoreDecision.Restore;
+
+        return RestoreDecision.NoAction;
     }
 }

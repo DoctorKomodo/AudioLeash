@@ -58,7 +58,7 @@ public class DeviceSelectionStateTests
     }
 
     [Fact]
-    public void EvaluateDefaultChange_WhenSelectedDeviceUnavailable_ReturnsClearSelection()
+    public void EvaluateDefaultChange_WhenSelectedDeviceUnavailable_ReturnsSuspend()
     {
         var state = new DeviceSelectionState();
         state.SelectDevice("device-A");
@@ -67,7 +67,82 @@ public class DeviceSelectionStateTests
             newDefaultId: "device-B",
             isSelectedDeviceAvailable: false);
 
-        Assert.Equal(RestoreDecision.ClearSelection, result);
+        Assert.Equal(RestoreDecision.Suspend, result);
+    }
+
+    // ── EvaluateDeviceStateChange ─────────────────────────────────────────
+
+    [Fact]
+    public void EvaluateDeviceStateChange_WhenNoSelection_ReturnsNoAction()
+    {
+        var state = new DeviceSelectionState();
+
+        var result = state.EvaluateDeviceStateChange("device-A", isNowActive: true);
+
+        Assert.Equal(RestoreDecision.NoAction, result);
+    }
+
+    [Fact]
+    public void EvaluateDeviceStateChange_WhenDifferentDevice_ReturnsNoAction()
+    {
+        var state = new DeviceSelectionState();
+        state.SelectDevice("device-A");
+
+        var result = state.EvaluateDeviceStateChange("device-B", isNowActive: true);
+
+        Assert.Equal(RestoreDecision.NoAction, result);
+    }
+
+    [Fact]
+    public void EvaluateDeviceStateChange_WhenSelectedDeviceBecomesActive_ReturnsRestore()
+    {
+        var state = new DeviceSelectionState();
+        state.SelectDevice("device-A");
+        state.SetDeviceAvailability(false);
+
+        var result = state.EvaluateDeviceStateChange("device-A", isNowActive: true);
+
+        Assert.Equal(RestoreDecision.Restore, result);
+        Assert.True(state.IsDeviceAvailable);
+    }
+
+    [Fact]
+    public void EvaluateDeviceStateChange_WhenSelectedDeviceBecomesInactive_ReturnsNoAction()
+    {
+        var state = new DeviceSelectionState();
+        state.SelectDevice("device-A");
+
+        var result = state.EvaluateDeviceStateChange("device-A", isNowActive: false);
+
+        Assert.Equal(RestoreDecision.NoAction, result);
+        Assert.False(state.IsDeviceAvailable);
+    }
+
+    [Fact]
+    public void EvaluateDeviceStateChange_WhenIsInternalChange_ReturnsNoAction()
+    {
+        var state = new DeviceSelectionState();
+        state.SelectDevice("device-A");
+        state.SetDeviceAvailability(false);
+        state.IsInternalChange = true;
+
+        var result = state.EvaluateDeviceStateChange("device-A", isNowActive: true);
+
+        Assert.Equal(RestoreDecision.NoAction, result);
+        // Availability still updated even during internal change
+        Assert.True(state.IsDeviceAvailable);
+    }
+
+    [Fact]
+    public void EvaluateDeviceStateChange_WhenAlreadyActive_ReturnsNoAction()
+    {
+        var state = new DeviceSelectionState();
+        state.SelectDevice("device-A");
+        // IsDeviceAvailable defaults to true via SelectDevice
+
+        var result = state.EvaluateDeviceStateChange("device-A", isNowActive: true);
+
+        Assert.Equal(RestoreDecision.NoAction, result);
     }
 
     // ── SelectDevice / ClearSelection ────────────────────────────────────
@@ -81,12 +156,36 @@ public class DeviceSelectionStateTests
     }
 
     [Fact]
+    public void SelectDevice_SetsIsDeviceAvailableToTrue()
+    {
+        var state = new DeviceSelectionState();
+        state.SelectDevice("device-A");
+        state.SetDeviceAvailability(false);
+
+        state.SelectDevice("device-B");
+
+        Assert.True(state.IsDeviceAvailable);
+    }
+
+    [Fact]
     public void ClearSelection_NullsTheStoredId()
     {
         var state = new DeviceSelectionState();
         state.SelectDevice("device-A");
         state.ClearSelection();
         Assert.Null(state.SelectedDeviceId);
+    }
+
+    [Fact]
+    public void ClearSelection_ResetsIsDeviceAvailableToTrue()
+    {
+        var state = new DeviceSelectionState();
+        state.SelectDevice("device-A");
+        state.SetDeviceAvailability(false);
+
+        state.ClearSelection();
+
+        Assert.True(state.IsDeviceAvailable);
     }
 
     // ── IsInternalChange flag ────────────────────────────────────────────
@@ -96,5 +195,25 @@ public class DeviceSelectionStateTests
     {
         var state = new DeviceSelectionState();
         Assert.False(state.IsInternalChange);
+    }
+
+    // ── IsDeviceAvailable ────────────────────────────────────────────────
+
+    [Fact]
+    public void IsDeviceAvailable_DefaultsToTrue()
+    {
+        var state = new DeviceSelectionState();
+        Assert.True(state.IsDeviceAvailable);
+    }
+
+    [Fact]
+    public void SetDeviceAvailability_UpdatesState()
+    {
+        var state = new DeviceSelectionState();
+        state.SetDeviceAvailability(false);
+        Assert.False(state.IsDeviceAvailable);
+
+        state.SetDeviceAvailability(true);
+        Assert.True(state.IsDeviceAvailable);
     }
 }
