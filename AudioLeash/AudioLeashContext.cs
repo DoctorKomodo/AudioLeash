@@ -63,7 +63,7 @@ public sealed class AudioLeashContext : ApplicationContext
         // IMPORTANT: _notificationClient must be a class field, not a local variable.
         // If the GC collects it while Windows holds a native COM pointer the process
         // will crash with ExecutionEngineException. (NAudio issue #849)
-        _notificationClient = new AudioNotificationClient(OnDefaultDeviceChanged);
+        _notificationClient = new AudioNotificationClient(OnDefaultDeviceChanged, OnDeviceStateChanged);
         _enumerator.RegisterEndpointNotificationCallback(_notificationClient);
 
         _settingsService = new SettingsService();
@@ -76,8 +76,8 @@ public sealed class AudioLeashContext : ApplicationContext
 
         bool playbackRestored = TryRestoreSavedDevice(DataFlow.Render, _selection, savedPlaybackId);
         bool captureRestored  = TryRestoreSavedDevice(DataFlow.Capture, _captureSelection, savedCaptureId);
-        bool playbackNotFound = savedPlaybackId is not null && !playbackRestored;
-        bool captureNotFound  = savedCaptureId is not null && !captureRestored;
+        bool playbackUnavailable = savedPlaybackId is not null && !playbackRestored;
+        bool captureUnavailable  = savedCaptureId is not null && !captureRestored;
 
         UpdateTrayTooltip();
 
@@ -89,19 +89,19 @@ public sealed class AudioLeashContext : ApplicationContext
                 tipText:  "Click the tray icon and select a device to enable auto-restore.",
                 tipIcon:  ToolTipIcon.Info);
         }
-        else if (playbackNotFound || captureNotFound)
+        else if (playbackUnavailable || captureUnavailable)
         {
-            string detail = (playbackNotFound, captureNotFound) switch
+            string detail = (playbackUnavailable, captureUnavailable) switch
             {
-                (true, true)   => "Your saved playback and recording devices were",
-                (true, false)  => "Your saved playback device was",
-                (false, true)  => "Your saved recording device was",
-                _              => "Your saved device was", // unreachable
+                (true, true)   => "Your saved playback and recording devices are",
+                (true, false)  => "Your saved playback device is",
+                (false, true)  => "Your saved recording device is",
+                _              => "Your saved device is", // unreachable
             };
             _trayIcon.ShowBalloonTip(
                 timeout:  4000,
-                tipTitle: "Saved Device Not Found",
-                tipText:  $"{detail} not found. Select a device from the tray menu to re-enable auto-restore.",
+                tipTitle: "Saved Device Unavailable",
+                tipText:  $"{detail} currently disconnected. AudioLeash will restore automatically when reconnected.",
                 tipIcon:  ToolTipIcon.Info);
         }
 
@@ -110,8 +110,8 @@ public sealed class AudioLeashContext : ApplicationContext
 
     /// <summary>
     /// Attempts to restore a previously saved device selection for the given flow.
-    /// Returns <c>true</c> if the device was found and selected, <c>false</c> otherwise.
-    /// When the device is not found, the persisted selection is cleared.
+    /// Always selects the device (even if currently unavailable).
+    /// Returns <c>true</c> if the device is currently active, <c>false</c> if unavailable.
     /// </summary>
     private bool TryRestoreSavedDevice(DataFlow flow, DeviceSelectionState selection, string? savedId)
     {
@@ -121,17 +121,9 @@ public sealed class AudioLeashContext : ApplicationContext
         bool available = active.Any(d => d.ID == savedId);
         foreach (var d in active) d.Dispose();
 
-        if (available)
-        {
-            selection.SelectDevice(savedId);
-            return true;
-        }
-
-        if (flow == DataFlow.Render)
-            _settingsService.SaveSelectedPlaybackDeviceId(null);
-        else
-            _settingsService.SaveSelectedCaptureDeviceId(null);
-        return false;
+        selection.SelectDevice(savedId);
+        selection.SetDeviceAvailability(available);
+        return available;
     }
 
     private void TrayIcon_MouseClick(object? sender, MouseEventArgs e)
@@ -221,7 +213,7 @@ public sealed class AudioLeashContext : ApplicationContext
         string? defaultId = defaultDevice?.ID;
         defaultDevice?.Dispose();
 
-        if (devices.Count == 0)
+        if (devices.Count == 0 && !(selection.SelectedDeviceId is not null && !selection.IsDeviceAvailable))
         {
             _contextMenu.Items.Add(new ToolStripMenuItem("No devices available") { Enabled = false });
         }
@@ -244,6 +236,19 @@ public sealed class AudioLeashContext : ApplicationContext
                 menuItem.Click += DeviceMenuItem_Click;
                 _contextMenu.Items.Add(menuItem);
             }
+        }
+
+        // Show unavailable selected device as a grayed-out, checked entry
+        if (selection.SelectedDeviceId is not null && !selection.IsDeviceAvailable)
+        {
+            string unavailableName = GetDeviceName(selection.SelectedDeviceId)
+                                     ?? "Unknown Device";
+            var unavailableItem = new ToolStripMenuItem($"{unavailableName}  (unavailable)")
+            {
+                Checked = true,
+                Enabled = false,
+            };
+            _contextMenu.Items.Add(unavailableItem);
         }
     }
 
@@ -349,20 +354,13 @@ public sealed class AudioLeashContext : ApplicationContext
             case RestoreDecision.NoAction:
                 return;
 
-            case RestoreDecision.ClearSelection:
-                selection.ClearSelection();
+            case RestoreDecision.Suspend:
+                // Device is unavailable — keep the selection but suspend enforcement.
+                // The OnDeviceStateChanged handler will restore when it reconnects.
+                selection.SetDeviceAvailability(false);
                 SafeInvoke(() =>
                 {
-                    if (flow == DataFlow.Render)
-                        _settingsService.SaveSelectedPlaybackDeviceId(null);
-                    else
-                        _settingsService.SaveSelectedCaptureDeviceId(null);
                     UpdateTrayTooltip();
-                    _trayIcon.ShowBalloonTip(
-                        timeout:  3000,
-                        tipTitle: $"{flowLabel} Unavailable",
-                        tipText:  $"Your selected {flowLabel.ToLower()} is no longer available. Selection cleared.",
-                        tipIcon:  ToolTipIcon.Warning);
                     RefreshDeviceList();
                 });
                 break;
@@ -427,6 +425,97 @@ public sealed class AudioLeashContext : ApplicationContext
         }
     }
 
+    /// <summary>
+    /// Called by <see cref="AudioNotificationClient"/> on a Windows audio thread
+    /// when a device's state changes (connected, disconnected, etc.).
+    /// </summary>
+    private void OnDeviceStateChanged(string deviceId, DeviceState newState)
+    {
+        bool isNowActive = newState == DeviceState.Active;
+
+        ProcessDeviceStateChange(DataFlow.Render, _selection, deviceId, isNowActive);
+        ProcessDeviceStateChange(DataFlow.Capture, _captureSelection, deviceId, isNowActive);
+    }
+
+    private void ProcessDeviceStateChange(
+        DataFlow flow,
+        DeviceSelectionState selection,
+        string deviceId,
+        bool isNowActive)
+    {
+        if (selection.SelectedDeviceId != deviceId) return;
+
+        bool wasAvailable = selection.IsDeviceAvailable;
+        var decision = selection.EvaluateDeviceStateChange(deviceId, isNowActive);
+        string flowLabel = flow == DataFlow.Render ? "Audio Device" : "Recording Device";
+
+        switch (decision)
+        {
+            case RestoreDecision.Restore:
+                selection.IsInternalChange = true;
+                try
+                {
+                    SafeInvoke(() =>
+                    {
+                        try
+                        {
+                            _policyConfig.SetDefaultEndpoint(deviceId);
+
+                            string? deviceName = GetDeviceName(deviceId);
+                            string displayName = deviceName ?? deviceId;
+
+                            UpdateTrayTooltip();
+
+                            _trayIcon.ShowBalloonTip(
+                                timeout:  3000,
+                                tipTitle: $"{flowLabel} Reconnected",
+                                tipText:  $"Switched back to: {displayName}",
+                                tipIcon:  ToolTipIcon.Info);
+                            RefreshDeviceList();
+                        }
+                        catch (Exception ex)
+                        {
+                            _trayIcon.ShowBalloonTip(
+                                timeout:  3000,
+                                tipTitle: "Restore Failed",
+                                tipText:  $"Could not restore {flowLabel.ToLower()}:\n{ex.Message}",
+                                tipIcon:  ToolTipIcon.Error);
+                        }
+                        finally
+                        {
+                            selection.IsInternalChange = false;
+                        }
+                    });
+                }
+                catch
+                {
+                    selection.IsInternalChange = false;
+                }
+                break;
+
+            case RestoreDecision.NoAction:
+                // Device just became unavailable — notify and update UI
+                if (wasAvailable && !isNowActive)
+                {
+                    SafeInvoke(() =>
+                    {
+                        string? deviceName = GetDeviceName(deviceId);
+                        string displayName = deviceName ?? flowLabel.ToLower();
+
+                        UpdateTrayTooltip();
+
+                        _trayIcon.ShowBalloonTip(
+                            timeout:  3000,
+                            tipTitle: $"{flowLabel} Disconnected",
+                            tipText:  $"{displayName} is no longer available. Waiting for reconnection…",
+                            tipIcon:  ToolTipIcon.Warning);
+                        RefreshDeviceList();
+                    });
+                }
+                break;
+        }
+    }
+
     private void SafeInvoke(Action action)
     {
         if (!_contextMenu.IsHandleCreated) return;
@@ -457,8 +546,8 @@ public sealed class AudioLeashContext : ApplicationContext
 
     private void UpdateTrayTooltip()
     {
-        string? playbackName = GetDeviceName(_selection.SelectedDeviceId);
-        string? captureName  = GetDeviceName(_captureSelection.SelectedDeviceId);
+        string? playbackName = FormatDeviceTooltip(_selection);
+        string? captureName  = FormatDeviceTooltip(_captureSelection);
 
         string text;
         if (playbackName is null && captureName is null)
@@ -473,13 +562,21 @@ public sealed class AudioLeashContext : ApplicationContext
         _trayIcon.Text = text.Length > 63 ? text[..62] + "…" : text;
     }
 
+    private string? FormatDeviceTooltip(DeviceSelectionState selection)
+    {
+        if (selection.SelectedDeviceId is null) return null;
+        string? name = GetDeviceName(selection.SelectedDeviceId);
+        if (name is null) return "Unknown (waiting)";
+        return selection.IsDeviceAvailable ? name : $"{name} (waiting)";
+    }
+
     private string? GetDeviceName(string? deviceId)
     {
         if (deviceId is null) return null;
         try
         {
             using var device = _enumerator.GetDevice(deviceId);
-            return device.State == DeviceState.Active ? device.FriendlyName : null;
+            return device.FriendlyName;
         }
         catch (Exception) { return null; }
     }
@@ -538,12 +635,23 @@ public sealed class AudioLeashContext : ApplicationContext
     private sealed class AudioNotificationClient : IMMNotificationClient
     {
         private readonly Action<DataFlow, string> _onDefaultChanged;
+        private readonly Action<string, DeviceState> _onDeviceStateChanged;
 
-        internal AudioNotificationClient(Action<DataFlow, string> onDefaultChanged)
-            => _onDefaultChanged = onDefaultChanged;
+        internal AudioNotificationClient(
+            Action<DataFlow, string> onDefaultChanged,
+            Action<string, DeviceState> onDeviceStateChanged)
+        {
+            _onDefaultChanged = onDefaultChanged;
+            _onDeviceStateChanged = onDeviceStateChanged;
+        }
 
         public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)
         {
+            // Windows can pass a null device ID when the last device of a role is removed.
+            // NAudio declares the parameter as non-nullable, but the underlying COM call
+            // can produce null. Guard against this to avoid spurious restore attempts.
+            if (defaultDeviceId is null) return;
+
             // Only react to Multimedia role changes for both Render (playback) and
             // Capture (recording). Windows fires this for Console, Multimedia, and
             // Communications separately -- filtering to Multimedia prevents triple-firing.
@@ -551,10 +659,12 @@ public sealed class AudioLeashContext : ApplicationContext
                 _onDefaultChanged(flow, defaultDeviceId);
         }
 
+        public void OnDeviceStateChanged(string deviceId, DeviceState newState)
+            => _onDeviceStateChanged(deviceId, newState);
+
         // Required by IMMNotificationClient; AudioLeash does not act on these.
         public void OnDeviceAdded(string pwstrDeviceId) { }
         public void OnDeviceRemoved(string deviceId) { }
-        public void OnDeviceStateChanged(string deviceId, DeviceState newState) { }
         public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key) { }
     }
 }
