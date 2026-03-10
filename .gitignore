@@ -31,9 +31,11 @@ installer/Output/
 # VS Code
 .vscode/
 
-# Claude Code (local-only settings; project-level settings.json is intentionally excluded too
-# since preferences are personal — add .claude/settings.json here if you want to share them)
-.claude/
+# Claude Code — ignore local settings but track shared project config
+.claude/settings.local.json
+!.claude/settings.json
+!.claude/rules/
+!.claude/hooks/
 
 # Test results & coverage
 **/TestResults/
