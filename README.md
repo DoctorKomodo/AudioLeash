@@ -136,19 +136,27 @@ The installer:
 ```
 AudioLeash/
 ├── AudioLeash.sln
-├── build-installer.ps1          ← Builds and packages the installer
+├── build-installer.ps1              ← Builds and packages the Inno Setup installer
 ├── installer/
-│   └── AudioLeash.iss           ← Inno Setup script
-└── AudioLeash/
-    ├── AudioLeash.csproj
-    ├── Program.cs               ← Entry point; runs AudioLeashContext
-    ├── AudioLeashContext.cs     ← All application logic (tray, menu, device events)
-    ├── DeviceSelectionState.cs  ← Pure selection state machine (unit-testable)
-    ├── PolicyConfigClient.cs    ← COM interop: sets Windows default audio endpoint
-    ├── SettingsService.cs       ← JSON settings persistence (%AppData%\AudioLeash\)
-    ├── StartupService.cs        ← Windows Run-key startup registration
-    └── Resources/
-        └── icon.ico             ← tray icon
+│   └── AudioLeash.iss               ← Inno Setup script
+├── AudioLeash/
+│   ├── AudioLeash.csproj
+│   ├── Program.cs                   ← Entry point; STA thread, WinForms bootstrap
+│   ├── AudioLeashContext.cs         ← All application logic (tray, menu, device events)
+│   ├── DeviceSelectionState.cs      ← Pure selection state machine (unit-testable)
+│   ├── PolicyConfigClient.cs        ← COM interop: sets Windows default audio endpoint
+│   ├── SettingsService.cs           ← JSON settings persistence (%AppData%\AudioLeash\)
+│   ├── StartupService.cs            ← Windows Run-key startup registration
+│   ├── DarkMenuRenderer.cs          ← Dark mode context menu renderer
+│   ├── WindowsTheme.cs              ← Windows theme detection (light/dark)
+│   └── Resources/
+│       └── icon.ico                 ← tray icon
+└── AudioLeash.Tests/
+    ├── AudioLeash.Tests.csproj      ← xUnit + NSubstitute
+    ├── DeviceSelectionStateTests.cs
+    ├── SettingsServiceTests.cs
+    ├── StartupServiceTests.cs
+    └── WindowsThemeTests.cs
 ```
 
 ---
