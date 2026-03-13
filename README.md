@@ -117,6 +117,7 @@ The installer:
 
 ### 13. Settings Persistence
 - The user-selected audio device is saved to `%AppData%\AudioLeash\settings.json`.
+- Both the device ID and its friendly name are persisted, so the app can display the correct device name even when the device is disconnected at startup.
 - On first launch (no settings file), a balloon tip prompts the user to select a device from the tray menu — the app is passive until a device is chosen explicitly.
 - On subsequent launches, AudioLeash restores the saved selection automatically (if the device is still available); if the saved device is not currently connected, the selection is kept and enforcement resumes when the device reconnects.
 - Clearing the selection also removes the saved preference.
