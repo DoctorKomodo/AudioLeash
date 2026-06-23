@@ -28,7 +28,8 @@ AudioLeash/
 ├── AudioLeash.sln
 ├── build-installer.ps1              ← Builds and packages the Inno Setup installer
 ├── CLAUDE.md                        ← this file
-├── README.md
+├── README.md                        ← user-facing: install & usage
+├── DEVELOPMENT.md                   ← dev-facing: build, test, architecture, roadmap
 ├── RELEASE_NOTES.md
 ├── installer/
 │   └── AudioLeash.iss               ← Inno Setup script
@@ -70,7 +71,7 @@ After completing a task, review your changes with a subagent that evaluates corr
 
 ## Future Development
 
-Ideas for future development are tracked in README.md. Do not implement features from that list unless explicitly requested.
+Ideas for future development are tracked in the Roadmap section of DEVELOPMENT.md. Do not implement features from that list unless explicitly requested.
 
 ## Testing
 
