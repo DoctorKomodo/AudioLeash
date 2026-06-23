@@ -82,7 +82,9 @@ public sealed class SettingsService
         SaveSettings(new AppSettings(
             SelectedDeviceId: null,  // clear legacy field
             SelectedPlaybackDeviceId: id,
-            SelectedCaptureDeviceId: existing?.SelectedCaptureDeviceId));
+            SelectedCaptureDeviceId: existing?.SelectedCaptureDeviceId,
+            SelectedPlaybackDeviceName: id is null ? null : existing?.SelectedPlaybackDeviceName,
+            SelectedCaptureDeviceName: existing?.SelectedCaptureDeviceName));
     }
 
     /// <summary>
@@ -96,7 +98,9 @@ public sealed class SettingsService
             SelectedDeviceId: null,  // clear legacy field
             SelectedPlaybackDeviceId: existing?.SelectedPlaybackDeviceId
                                      ?? existing?.SelectedDeviceId,
-            SelectedCaptureDeviceId: id));
+            SelectedCaptureDeviceId: id,
+            SelectedPlaybackDeviceName: existing?.SelectedPlaybackDeviceName,
+            SelectedCaptureDeviceName: id is null ? null : existing?.SelectedCaptureDeviceName));
     }
 
     /// <summary>
@@ -109,6 +113,49 @@ public sealed class SettingsService
             SelectedDeviceId: null,
             SelectedPlaybackDeviceId: playbackId,
             SelectedCaptureDeviceId: captureId));
+    }
+
+    // ── Device name persistence ─────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the persisted playback device friendly name, or <c>null</c> if none is saved.
+    /// </summary>
+    public string? LoadSelectedPlaybackDeviceName()
+        => LoadSettings()?.SelectedPlaybackDeviceName;
+
+    /// <summary>
+    /// Returns the persisted capture device friendly name, or <c>null</c> if none is saved.
+    /// </summary>
+    public string? LoadSelectedCaptureDeviceName()
+        => LoadSettings()?.SelectedCaptureDeviceName;
+
+    /// <summary>
+    /// Persists the playback device ID and friendly name, preserving any existing capture selection.
+    /// </summary>
+    public void SaveSelectedPlaybackDevice(string? id, string? name)
+    {
+        var existing = LoadSettings();
+        SaveSettings(new AppSettings(
+            SelectedDeviceId: null,
+            SelectedPlaybackDeviceId: id,
+            SelectedCaptureDeviceId: existing?.SelectedCaptureDeviceId,
+            SelectedPlaybackDeviceName: name,
+            SelectedCaptureDeviceName: existing?.SelectedCaptureDeviceName));
+    }
+
+    /// <summary>
+    /// Persists the capture device ID and friendly name, preserving any existing playback selection.
+    /// </summary>
+    public void SaveSelectedCaptureDevice(string? id, string? name)
+    {
+        var existing = LoadSettings();
+        SaveSettings(new AppSettings(
+            SelectedDeviceId: null,
+            SelectedPlaybackDeviceId: existing?.SelectedPlaybackDeviceId
+                                     ?? existing?.SelectedDeviceId,
+            SelectedCaptureDeviceId: id,
+            SelectedPlaybackDeviceName: existing?.SelectedPlaybackDeviceName,
+            SelectedCaptureDeviceName: name));
     }
 
     // ── Internal helpers ────────────────────────────────────────────────
@@ -141,5 +188,7 @@ public sealed class SettingsService
     private sealed record AppSettings(
         string? SelectedDeviceId,
         string? SelectedPlaybackDeviceId,
-        string? SelectedCaptureDeviceId);
+        string? SelectedCaptureDeviceId,
+        string? SelectedPlaybackDeviceName = null,
+        string? SelectedCaptureDeviceName = null);
 }

@@ -25,6 +25,8 @@ public sealed class AudioLeashContext : ApplicationContext
     private readonly SettingsService         _settingsService;
     private readonly StartupService          _startupService;
     private readonly Font                    _sectionHeaderFont;
+    private string?                          _savedPlaybackDeviceName;
+    private string?                          _savedCaptureDeviceName;
 
     public AudioLeashContext()
     {
@@ -72,6 +74,8 @@ public sealed class AudioLeashContext : ApplicationContext
         // Restore saved device selections (playback and capture).
         string? savedPlaybackId = _settingsService.LoadSelectedPlaybackDeviceId();
         string? savedCaptureId  = _settingsService.LoadSelectedCaptureDeviceId();
+        _savedPlaybackDeviceName = _settingsService.LoadSelectedPlaybackDeviceName();
+        _savedCaptureDeviceName  = _settingsService.LoadSelectedCaptureDeviceName();
         bool isFirstRun = savedPlaybackId is null && !_settingsService.HasSettingsFile;
 
         bool playbackRestored = TryRestoreSavedDevice(DataFlow.Render, _selection, savedPlaybackId);
@@ -241,7 +245,11 @@ public sealed class AudioLeashContext : ApplicationContext
         // Show unavailable selected device as a grayed-out, checked entry
         if (selection.SelectedDeviceId is not null && !selection.IsDeviceAvailable)
         {
+            string? savedName = flow == DataFlow.Render
+                ? _savedPlaybackDeviceName
+                : _savedCaptureDeviceName;
             string unavailableName = GetDeviceName(selection.SelectedDeviceId)
+                                     ?? savedName
                                      ?? "Unknown Device";
             var unavailableItem = new ToolStripMenuItem($"{unavailableName}  (unavailable)")
             {
@@ -270,9 +278,15 @@ public sealed class AudioLeashContext : ApplicationContext
             selection.SelectDevice(deviceId);
 
             if (flow == DataFlow.Render)
-                _settingsService.SaveSelectedPlaybackDeviceId(deviceId);
+            {
+                _savedPlaybackDeviceName = deviceName;
+                _settingsService.SaveSelectedPlaybackDevice(deviceId, deviceName);
+            }
             else
-                _settingsService.SaveSelectedCaptureDeviceId(deviceId);
+            {
+                _savedCaptureDeviceName = deviceName;
+                _settingsService.SaveSelectedCaptureDevice(deviceId, deviceName);
+            }
 
             UpdateTrayTooltip();
 
@@ -299,6 +313,8 @@ public sealed class AudioLeashContext : ApplicationContext
     {
         _selection.ClearSelection();
         _captureSelection.ClearSelection();
+        _savedPlaybackDeviceName = null;
+        _savedCaptureDeviceName = null;
         _settingsService.SaveSelectedDeviceIds(null, null);
         UpdateTrayTooltip();
 
@@ -499,7 +515,10 @@ public sealed class AudioLeashContext : ApplicationContext
                 {
                     SafeInvoke(() =>
                     {
-                        string? deviceName = GetDeviceName(deviceId);
+                        string? savedName = flow == DataFlow.Render
+                            ? _savedPlaybackDeviceName
+                            : _savedCaptureDeviceName;
+                        string? deviceName = GetDeviceName(deviceId) ?? savedName;
                         string displayName = deviceName ?? flowLabel.ToLower();
 
                         UpdateTrayTooltip();
@@ -566,7 +585,14 @@ public sealed class AudioLeashContext : ApplicationContext
     {
         if (selection.SelectedDeviceId is null) return null;
         string? name = GetDeviceName(selection.SelectedDeviceId);
-        if (name is null) return "Unknown (waiting)";
+        if (name is null)
+        {
+            string? savedName = selection == _selection
+                ? _savedPlaybackDeviceName
+                : _savedCaptureDeviceName;
+            if (savedName is null) return "Unknown (waiting)";
+            return $"{savedName} (waiting)";
+        }
         return selection.IsDeviceAvailable ? name : $"{name} (waiting)";
     }
 
