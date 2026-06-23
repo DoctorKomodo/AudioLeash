@@ -1,5 +1,44 @@
 # AudioLeash — Release Notes
 
+## v1.1.0
+
+This release adds recording-device support, smarter handling of devices that come and go, and a number of tray-experience improvements.
+
+### New Features
+
+**Recording / Microphone Device Support**
+- The tray menu now has two sections — **Playback** and **Recording** — each with its own header.
+- You can lock a playback device and a recording device independently; AudioLeash restores whichever one Windows changes.
+- "Clear Selection" resets both at once. Settings from older versions are migrated automatically.
+
+**Persistent Selection for Unavailable Devices**
+- When your selected device is unplugged or disabled, AudioLeash now **keeps the selection and suspends enforcement** instead of clearing it (the previous behaviour).
+- The device appears in the tray menu as a grayed-out, checked **(unavailable)** entry, and the tooltip shows **(waiting)**.
+- When the device reconnects, it is **restored automatically** with a "Device Reconnected" notification — including devices that were disconnected at startup.
+
+**Dark Mode Menu**
+- The tray context menu adapts to the Windows colour theme: a dark background with light text in dark mode, standard appearance in light mode.
+- Switches live — changing the Windows theme is reflected the next time the menu opens, no restart needed.
+
+**Tray Tooltip Shows Selected Device**
+- Hovering the tray icon shows the locked playback and recording device names (with a "(waiting)" suffix when a device is disconnected).
+
+### Improvements
+
+- The device list now **auto-refreshes every time the tray menu opens**, so it always reflects the current set of devices.
+- Device **friendly names are persisted** alongside their IDs, so the correct name is shown even when the device is disconnected at startup.
+
+### Build & Packaging
+
+- The installer version is now **derived from the built executable**, with `AudioLeash.csproj` `<Version>` as the single source of truth. `build-installer.ps1` accepts an optional `-Version` override for CI/tag-driven builds.
+
+### Requirements
+
+- Windows 10 or 11
+- .NET 10 Windows Desktop Runtime (the installer checks for it and warns if absent)
+
+---
+
 ## v1.0.0 — Initial Release
 
 AudioLeash is a lightweight Windows system tray application that prevents Windows from automatically switching your audio output device.
