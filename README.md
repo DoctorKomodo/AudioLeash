@@ -58,6 +58,10 @@ Uninstall from **Settings → Apps → Installed apps → AudioLeash**, or use t
 
 Developer documentation — building, running tests, packaging the installer, project layout, architecture notes, known issues, and the roadmap — lives in **[DEVELOPMENT.md](DEVELOPMENT.md)**.
 
+## A note on how this was built
+
+AudioLeash was developed with the help of AI tools. Some people feel strongly about that, one way or the other — this note is here so you can make an informed choice. The code is open for anyone to read, review, and audit.
+
 ## License
 
 Released under the [MIT License](LICENSE).
