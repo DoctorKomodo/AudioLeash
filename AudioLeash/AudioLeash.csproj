@@ -9,6 +9,8 @@
     <AssemblyName>AudioLeash</AssemblyName>
     <RootNamespace>AudioLeash</RootNamespace>
     <ApplicationIcon>Resources\icon.ico</ApplicationIcon>
+    <!-- Single source of truth for the app version. The installer reads this back
+         from the built exe; build-installer.ps1 -Version can override it at build time. -->
     <Version>1.0.0</Version>
     <Authors>AudioLeash</Authors>
     <Description>Keeps Windows from changing your audio output device without permission</Description>

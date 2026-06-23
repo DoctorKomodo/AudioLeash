@@ -10,12 +10,29 @@
     3. Compiles installer\AudioLeash.iss with Inno Setup 6 to produce
        installer\Output\AudioLeash-Setup.exe.
 
+.PARAMETER Version
+    Optional version override (e.g. "1.2.3" or "1.2.3.0"). When supplied, it is
+    passed to `dotnet publish` as -p:Version, which stamps the executable's file
+    version. The installer reads that version back from the published exe, so the
+    setup version always matches the build. When omitted, the <Version> defined
+    in AudioLeash.csproj is used.
+
+.EXAMPLE
+    .\build-installer.ps1
+
+.EXAMPLE
+    .\build-installer.ps1 -Version 1.2.3
+
 .NOTES
     Prerequisites
     -------------
     .NET 10 SDK    https://dotnet.microsoft.com/download/dotnet/10
     Inno Setup 6   https://jrsoftware.org/isinfo.php
 #>
+
+param(
+    [string]$Version
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -42,9 +59,17 @@ Write-Host ''
 Write-Host '==> Publishing AudioLeash (framework-dependent)...' `
     -ForegroundColor Cyan
 
-dotnet publish $Project `
-    --configuration Release `
-    --output $PublishDir
+$publishArgs = @(
+    $Project,
+    '--configuration', 'Release',
+    '--output', $PublishDir
+)
+if ($Version) {
+    Write-Host "    Overriding version: $Version" -ForegroundColor DarkGray
+    $publishArgs += "-p:Version=$Version"
+}
+
+dotnet publish @publishArgs
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error 'dotnet publish failed. See output above.'

@@ -38,6 +38,13 @@ Produces `installer\Output\AudioLeash-Setup.exe` — a single-file Windows insta
 .\build-installer.ps1
 ```
 
+**Versioning:** the app version is defined once, as `<Version>` in `AudioLeash/AudioLeash.csproj`. The installer reads it back from the freshly published executable, so the setup version always matches the build. To stamp a different version at build time (e.g. from a CI pipeline or git tag) without editing the project file:
+```powershell
+.\build-installer.ps1 -Version 1.2.3
+# from a git tag like "v1.2.3":
+.\build-installer.ps1 -Version (git describe --tags --abbrev=0).TrimStart('v')
+```
+
 The installer:
 - Checks for the [.NET 10 Windows Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) and warns if it is absent
 - Installs to `%LOCALAPPDATA%\AudioLeash` (no UAC prompt)
