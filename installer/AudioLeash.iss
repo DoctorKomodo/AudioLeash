@@ -11,7 +11,7 @@
 ; .csproj <Version> (overridable via build-installer.ps1 -Version) is the
 ; single source of truth. Requires ..\publish\AudioLeash.exe to exist first —
 ; build-installer.ps1 runs `dotnet publish` before invoking ISCC.
-#define MyAppVersion   GetFileVersion(AddBackslash(SourcePath) + "..\publish\AudioLeash.exe")
+#define MyAppVersion   GetVersionNumbersString(AddBackslash(SourcePath) + "..\publish\AudioLeash.exe")
 #define MyAppPublisher "DoctorKomodo"
 #define MyAppURL       "https://github.com/DoctorKomodo/AudioLeash"
 #define MyAppExeName   "AudioLeash.exe"
