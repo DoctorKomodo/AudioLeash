@@ -8,6 +8,30 @@ internal enum RestoreDecision
 }
 
 /// <summary>
+/// The action to take once a burst of device state changes has settled
+/// (see <see cref="DeviceSelectionState.EvaluateSettledState"/>). A rapid
+/// disconnect/reconnect flap collapses to a single outcome reflecting the
+/// net change between the last-notified state and the settled state.
+/// </summary>
+internal enum SettledOutcome
+{
+    /// <summary>Net state unchanged and the device is still unavailable — do nothing.</summary>
+    None,
+
+    /// <summary>The device is now unavailable (was available) — notify the user once.</summary>
+    NotifyDisconnected,
+
+    /// <summary>The device is available again (was unavailable) — restore it and notify once.</summary>
+    NotifyReconnected,
+
+    /// <summary>
+    /// Net state unchanged and the device is available — a flap that ended where it
+    /// started. Silently re-assert the default if needed, with no notification.
+    /// </summary>
+    ReassertSilently,
+}
+
+/// <summary>
 /// Pure state machine for the device selection and auto-restore logic.
 /// Contains no WinForms or audio-stack dependencies — fully unit-testable.
 /// </summary>
@@ -77,21 +101,32 @@ internal sealed class DeviceSelectionState
     }
 
     /// <summary>
-    /// Decides what the app should do when a device's state changes
-    /// (connected/disconnected). Returns <see cref="RestoreDecision.Restore"/>
-    /// if the selected device just became available again.
+    /// Decides what to do once a burst of device state changes has settled.
+    /// <para>
+    /// Device connect/disconnect events are debounced by the caller: rather than
+    /// reacting to each transition, the caller waits for the endpoint to stop
+    /// flapping, then calls this once with the device's final availability. The
+    /// outcome reflects the net change between the last state the user was notified
+    /// about (<see cref="IsDeviceAvailable"/>) and <paramref name="isAvailableNow"/>.
+    /// </para>
+    /// <para>
+    /// This commits <paramref name="isAvailableNow"/> as the new notified state, so
+    /// a flap that ends where it started produces no disconnect/reconnect spam.
+    /// </para>
     /// </summary>
-    public RestoreDecision EvaluateDeviceStateChange(string deviceId, bool isNowActive)
+    public SettledOutcome EvaluateSettledState(bool isAvailableNow)
     {
-        if (SelectedDeviceId is null)    return RestoreDecision.NoAction;
-        if (deviceId != SelectedDeviceId) return RestoreDecision.NoAction;
+        if (SelectedDeviceId is null) return SettledOutcome.None;
 
         bool wasAvailable = IsDeviceAvailable;
-        IsDeviceAvailable = isNowActive;
+        IsDeviceAvailable = isAvailableNow;
 
-        if (isNowActive && !wasAvailable && !IsInternalChange)
-            return RestoreDecision.Restore;
-
-        return RestoreDecision.NoAction;
+        return (wasAvailable, isAvailableNow) switch
+        {
+            (false, true)  => SettledOutcome.NotifyReconnected,
+            (true, false)  => SettledOutcome.NotifyDisconnected,
+            (true, true)   => SettledOutcome.ReassertSilently,
+            (false, false) => SettledOutcome.None,
+        };
     }
 }
