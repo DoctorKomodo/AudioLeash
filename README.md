@@ -35,6 +35,8 @@ Once a device is locked you can forget about it. If Windows switches away — be
 
 Unplug your locked headset and AudioLeash doesn't forget it. The device stays selected (shown greyed-out as **(unavailable)**, with **(waiting)** in the tray tooltip). The moment you plug it back in, AudioLeash restores it as the default. Your choice survives reboots, too — if the device isn't connected at startup, AudioLeash simply waits for it.
 
+Some devices flicker off and on rapidly during normal use — an HDMI/eARC TV that briefly drops audio while a receiver wakes up, for example. AudioLeash waits for the device to settle before reacting, so a burst of disconnects and reconnects produces a single notification at most (and none at all if the device ends up right back where it started).
+
 ---
 
 ## Features at a glance
