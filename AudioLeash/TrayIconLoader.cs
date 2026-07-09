@@ -20,6 +20,13 @@ public static class TrayIconLoader
     /// size, which blurs the hand-tuned 16px artwork. Passing the desired size
     /// makes GDI+ pick the matching frame instead.
     /// </remarks>
+    /// <returns>
+    /// A caller-owned <see cref="Icon"/> that must be disposed, on both the
+    /// success path and the fallback path. The fallback returns an
+    /// independently-owned clone of <see cref="SystemIcons.Application"/>
+    /// rather than that shared static instance, so disposing it never affects
+    /// the process-wide default icon.
+    /// </returns>
     public static Icon Load(Size desired)
     {
         try
@@ -31,6 +38,6 @@ public static class TrayIconLoader
         }
         catch { /* fall through to the system default */ }
 
-        return SystemIcons.Application;
+        return (Icon)SystemIcons.Application.Clone();
     }
 }
