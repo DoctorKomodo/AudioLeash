@@ -523,7 +523,12 @@ public class IconAssetTests
             frame.Payload[2] == 'N' && frame.Payload[3] == 'G',
             $"expected a PNG-encoded {frame.Width}px frame; regenerate with tools/generate-icon.py");
 
-        return new Bitmap(new MemoryStream(frame.Payload));
+        using var stream = new MemoryStream(frame.Payload);
+        using var decoded = new Bitmap(stream);
+
+        // A Bitmap constructed from a stream requires that stream to outlive it,
+        // so hand back a copy that owns its own pixel data instead.
+        return new Bitmap(decoded);
     }
 
     private static double Luminance(Color c) =>
