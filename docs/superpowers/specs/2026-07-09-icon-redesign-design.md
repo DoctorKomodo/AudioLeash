@@ -70,10 +70,14 @@ This is the core of the fix. No frame is ever produced by shrinking a larger one
 - Carabiner with inner cutout, visible gate line, full-length link bar.
 
 **Simplified glyph** — 16, 32px:
-- Carabiner reduced to a fat closed ring: no gate detail, thicker wall, no inner
-  cutout at 16px.
-- Speaker slightly enlarged relative to the tile.
-- Link bar shortened and thickened.
+- Carabiner reduced to a fat closed ring: no gate detail, thicker wall.
+- The ring **keeps its inner cutout even at 16px**. This reverses the original
+  intent: a solid pill at 16px renders as a featureless vertical bar, which is
+  no better than the icon we replaced. A 1px wall still reads as a ring.
+  Established by rendering both and looking at them.
+- Speaker and ring are separated by a 1px gap at 16px, so they resolve as two
+  masses rather than one smear. This gap, not the ring's detail, is what makes
+  the icon legible.
 - All edges snapped to whole pixels.
 
 Every frame is rendered by supersampling 8x and downsampling. The small frames

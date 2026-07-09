@@ -682,11 +682,15 @@ python tools/generate-icon.py --preview # also dumps PNGs to build/icon-preview/
 ```
 
 The script renders six frames (16, 32, 48, 64, 128, 256). The 16px and 32px
-frames are drawn from **simplified geometry** — a thicker carabiner, no inner
-cutout at 16px — rather than downscaled from a large master. A hairline ring
-shrunk to 16px dissolves into grey mush, which is what the previous icon did.
-`IconAssetTests` enforces this: it fails if the 16px frame ever becomes a plain
-downscale of the 32px one.
+frames are drawn from **simplified geometry** — a thicker carabiner, no gate
+detail, coordinates snapped to whole device pixels — rather than downscaled
+from a large master. A hairline ring shrunk to 16px dissolves into grey mush,
+which is what the previous icon did. `IconAssetTests` enforces this: it fails
+if the 16px frame ever becomes a plain downscale of the 32px one.
+
+The ring keeps its inner cutout even at 16px: a solid pill there is
+indistinguishable from a vertical bar. What carries legibility at tray size is
+the 1px gap between speaker and ring, which keeps them as two separate masses.
 
 The tile geometry (corner radius 15.3% of width, vertical gradient, white glyph
 at ~54% width) is shared with the AudioStreamer icon so the two apps read as a
