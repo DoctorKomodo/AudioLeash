@@ -57,3 +57,6 @@ desktop.ini
 
 # Git worktrees
 .worktrees/
+
+# Icon preview renders from tools/generate-icon.py
+build/

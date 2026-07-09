@@ -33,6 +33,26 @@ dotnet test AudioLeash.sln
 
 Tests use **xUnit** + **NSubstitute** and live in `AudioLeash.Tests/`. They cover the pure logic — the device-selection state machine, settings persistence, startup registration, and theme detection — and deliberately avoid anything that needs a live Windows audio stack.
 
+## Regenerating the Icon
+
+`AudioLeash/Resources/icon.ico` is generated, not hand-drawn. The source of truth is `tools/generate-icon.py`.
+
+```powershell
+python -m pip install Pillow            # dev-time only; not a build dependency
+python tools/generate-icon.py           # rewrites AudioLeash/Resources/icon.ico
+python tools/generate-icon.py --preview # also dumps PNGs to build/icon-preview/
+```
+
+The script renders six frames (16, 32, 48, 64, 128, 256). The 16px and 32px frames are drawn from **simplified geometry** — a thicker carabiner, no gate detail, coordinates snapped to whole device pixels — rather than downscaled from a large master. A hairline ring shrunk to 16px dissolves into grey mush, which is exactly what the previous icon did.
+
+The ring keeps its inner cutout even at 16px: a solid pill at that size is indistinguishable from a vertical bar. What carries legibility in the tray is the 1px gap between the speaker and the ring, which keeps them as two separate masses.
+
+`IconAssetTests` enforces that. It decodes the shipped 16px frame and asserts it resolves into **exactly two bright masses** — the speaker and the ring — with at least 20 near-white pixels. Regenerating with `SIMPLIFIED_UP_TO = 0`, so every frame comes from the full hairline geometry, produces five fragmented masses and eight near-white pixels, and the tests fail. Do not relax those bounds to make a red test green; they mean the artwork regressed.
+
+The tile geometry (corner radius 15.3% of width, vertical gradient, white glyph at ~54% width) is shared with the AudioStreamer icon so the two apps read as a family. AudioLeash's gradient is `#22C3DE` → `#0E7C96`.
+
+The generator is deterministic: re-running it on an unchanged script reproduces the committed `.ico` byte-for-byte with the same Pillow version. That has only been verified within a single Pillow version — a Pillow upgrade could change its PNG encoder's output bytes without changing the rendered pixels.
+
 ## Building the Installer
 
 Produces `installer\Output\AudioLeash-Setup.exe`, a per-user installer that needs no admin rights.
@@ -82,6 +102,8 @@ AudioLeash/
 ├── build-installer.ps1              ← Builds and packages the Inno Setup installer
 ├── installer/
 │   └── AudioLeash.iss               ← Inno Setup script
+├── tools/
+│   └── generate-icon.py             ← Regenerates Resources/icon.ico (Pillow, dev-only)
 ├── AudioLeash/
 │   ├── AudioLeash.csproj
 │   ├── Program.cs                   ← Entry point; STA thread, WinForms bootstrap
@@ -92,13 +114,16 @@ AudioLeash/
 │   ├── StartupService.cs            ← Windows Run-key startup registration
 │   ├── DarkMenuRenderer.cs          ← Dark mode context menu renderer
 │   ├── WindowsTheme.cs              ← Windows theme detection (light/dark)
+│   ├── TrayIconLoader.cs            ← Loads the tray icon at the requested frame size
 │   └── Resources/
 │       └── icon.ico                 ← tray icon
 └── AudioLeash.Tests/
     ├── AudioLeash.Tests.csproj      ← xUnit + NSubstitute
     ├── DeviceSelectionStateTests.cs
+    ├── IconAssetTests.cs
     ├── SettingsServiceTests.cs
     ├── StartupServiceTests.cs
+    ├── TrayIconLoaderTests.cs
     └── WindowsThemeTests.cs
 ```
 
