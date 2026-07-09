@@ -33,6 +33,14 @@ public class IconAssetTests
             int height = ico[entry + 1] == 0 ? 256 : ico[entry + 1];
             int length = BitConverter.ToInt32(ico, entry + 8);
             int offset = BitConverter.ToInt32(ico, entry + 12);
+
+            if (offset < 0 || length < 0 || offset + length > ico.Length)
+            {
+                throw new InvalidOperationException(
+                    $"icon.ico frame {i} has an out-of-range payload (offset={offset}, " +
+                    $"length={length}, file length={ico.Length}); the .ico is truncated or malformed");
+            }
+
             frames.Add(new Frame(width, height, ico.AsSpan(offset, length).ToArray()));
         }
 
@@ -66,22 +74,20 @@ public class IconAssetTests
     }
 
     /// <summary>
-    /// The 16px frame must be redrawn, not shrunk. This asserts the design
-    /// intent directly: the glyph resolves into exactly two bright masses — the
-    /// speaker and the carabiner ring — separated by tile pixels, and its white
-    /// is really white rather than antialiased grey.
+    /// The 16px frame must be redrawn, not shrunk: its white must be really
+    /// white rather than antialiased grey.
     /// </summary>
     /// <remarks>
     /// An earlier version compared the 16px frame against a bilinear downscale
     /// of the 32px frame. That metric separated good artwork from bad by only
     /// 1.34x, because both are independent LANCZOS reductions of a supersampled
-    /// render and differ substantially either way. These two assertions separate
-    /// by 3.4x: regenerating with SIMPLIFIED_UP_TO = 0 (all frames from the full
-    /// hairline geometry) yields 5 fragmented masses and 8 near-white pixels,
-    /// against 2 masses and 27 near-white pixels for the real artwork.
+    /// render and differ substantially either way. This assertion separates by
+    /// 3.4x: regenerating with SIMPLIFIED_UP_TO = 0 (all frames from the full
+    /// hairline geometry) yields 8 near-white pixels, against 27 for the real
+    /// artwork.
     /// </remarks>
     [Fact]
-    public void SmallFrame_ResolvesIntoTwoCrispMasses()
+    public void SmallFrame_HasCrispWhitePixels()
     {
         using Bitmap frame = Decode(ReadFrames().Single(f => f.Width == 16));
 
@@ -97,6 +103,18 @@ public class IconAssetTests
             nearWhite >= MinimumNearWhitePixels,
             $"only {nearWhite} near-white pixels at 16px (need >= {MinimumNearWhitePixels}); " +
             "the glyph has dissolved into antialiased grey — is it being downscaled?");
+    }
+
+    /// <summary>
+    /// The glyph resolves into exactly two bright masses — the speaker and the
+    /// carabiner ring. If they merge, the icon reads as one blob; if it
+    /// fragments into more, the artwork has dissolved (regenerating with
+    /// SIMPLIFIED_UP_TO = 0 yields 5 fragmented masses instead of 2).
+    /// </summary>
+    [Fact]
+    public void SmallFrame_ResolvesIntoExactlyTwoMasses()
+    {
+        using Bitmap frame = Decode(ReadFrames().Single(f => f.Width == 16));
 
         Assert.Equal(2, CountBrightMasses(frame));
     }
