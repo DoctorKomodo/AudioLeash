@@ -126,8 +126,14 @@ than 16x16.
 3. Mean luminance contrast between glyph pixels and tile pixels at 16px clears a
    minimum ratio.
 
-These tests read the `.ico` only. They require no Windows audio stack, so they
-run in Linux CI, consistent with the project's testing constraints.
+These tests read the `.ico` only and require no Windows audio stack, consistent
+with the project's testing constraints. They run on Windows: the test project
+targets `net10.0-windows7.0` and the tests decode frames with `System.Drawing`.
+The repository has no CI configuration today, so no CI change is needed.
+
+The generator writes PNG-encoded frames (Pillow's ICO default). The tests parse
+the `.ico` directory directly and decode each frame's PNG payload, rather than
+going through `Icon.ToBitmap()`, which is unreliable for PNG-compressed frames.
 
 **Manual:**
 
