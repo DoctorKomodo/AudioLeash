@@ -1,5 +1,33 @@
 # AudioLeash — Release Notes
 
+## v1.2.0
+
+This release stops notification spam from flapping devices, and replaces the tray icon with one you can actually recognise.
+
+### Improvements
+
+**No more notification bursts when a device flaps**
+- A device that rapidly disconnects and reconnects — an HDMI/eARC TV black-screening while a receiver wakes, for example — used to fire one balloon per transition, producing five or more "Disconnected" notifications followed by five or more "Reconnected" ones.
+- AudioLeash now waits for the device to settle before reacting, and shows **at most one notification** reflecting the net change. A flap that ends back on your selected device restores it silently, with no notification at all.
+- Yanking the leash — restoring your device when Windows switches away from it — is unaffected and stays immediate.
+
+**A tray icon you can read at tray size**
+- The icon is now a cyan tile carrying a white speaker and carabiner, replacing the thin waveform that dissolved into a pale smear at 16x16.
+- The small sizes are drawn specifically for the notification area rather than shrunk down from a large image, so the icon stays sharp on both light and dark taskbars.
+
+### Fixes
+
+- The tray icon was being loaded at 32x32 and scaled down to 16x16 by Windows, which blurred it. AudioLeash now loads the correctly-sized image.
+
+### Requirements
+
+- Windows 10 or 11
+- .NET 10 Windows Desktop Runtime — if it is missing, AudioLeash offers you the download link the first time you launch it
+
+> **Note:** the installer no longer checks for the .NET runtime itself. That check consulted the 32-bit view of the registry and so false-positived on machines that already had the 64-bit desktop runtime installed.
+
+---
+
 ## v1.1.0
 
 This release adds recording-device support, smarter handling of devices that come and go, and a number of tray-experience improvements.
