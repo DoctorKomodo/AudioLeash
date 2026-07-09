@@ -51,7 +51,7 @@ The ring keeps its inner cutout even at 16px: a solid pill at that size is indis
 
 The tile geometry (corner radius 15.3% of width, vertical gradient, white glyph at ~54% width) is shared with the AudioStreamer icon so the two apps read as a family. AudioLeash's gradient is `#22C3DE` → `#0E7C96`.
 
-The generator is deterministic: re-running it on an unchanged script reproduces the committed `.ico` byte-for-byte.
+The generator is deterministic: re-running it on an unchanged script reproduces the committed `.ico` byte-for-byte with the same Pillow version. That has only been verified within a single Pillow version — a Pillow upgrade could change its PNG encoder's output bytes without changing the rendered pixels.
 
 ## Building the Installer
 
