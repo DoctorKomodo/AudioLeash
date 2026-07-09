@@ -102,6 +102,8 @@ AudioLeash/
 ├── build-installer.ps1              ← Builds and packages the Inno Setup installer
 ├── installer/
 │   └── AudioLeash.iss               ← Inno Setup script
+├── tools/
+│   └── generate-icon.py             ← Regenerates Resources/icon.ico (Pillow, dev-only)
 ├── AudioLeash/
 │   ├── AudioLeash.csproj
 │   ├── Program.cs                   ← Entry point; STA thread, WinForms bootstrap
@@ -112,13 +114,16 @@ AudioLeash/
 │   ├── StartupService.cs            ← Windows Run-key startup registration
 │   ├── DarkMenuRenderer.cs          ← Dark mode context menu renderer
 │   ├── WindowsTheme.cs              ← Windows theme detection (light/dark)
+│   ├── TrayIconLoader.cs            ← Loads the tray icon at the requested frame size
 │   └── Resources/
 │       └── icon.ico                 ← tray icon
 └── AudioLeash.Tests/
     ├── AudioLeash.Tests.csproj      ← xUnit + NSubstitute
     ├── DeviceSelectionStateTests.cs
+    ├── IconAssetTests.cs
     ├── SettingsServiceTests.cs
     ├── StartupServiceTests.cs
+    ├── TrayIconLoaderTests.cs
     └── WindowsThemeTests.cs
 ```
 
