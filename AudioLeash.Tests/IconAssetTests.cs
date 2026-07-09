@@ -34,7 +34,7 @@ public class IconAssetTests
             int length = BitConverter.ToInt32(ico, entry + 8);
             int offset = BitConverter.ToInt32(ico, entry + 12);
 
-            if (offset < 0 || length < 0 || offset + length > ico.Length)
+            if (offset < 0 || length < 0 || (long)offset + length > ico.Length)
             {
                 throw new InvalidOperationException(
                     $"icon.ico frame {i} has an out-of-range payload (offset={offset}, " +
