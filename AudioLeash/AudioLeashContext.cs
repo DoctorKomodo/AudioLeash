@@ -57,7 +57,7 @@ public sealed class AudioLeashContext : ApplicationContext
 
         _trayIcon = new NotifyIcon
         {
-            Icon             = GetTrayIcon(),
+            Icon             = TrayIconLoader.Load(SystemInformation.SmallIconSize),
             ContextMenuStrip = _contextMenu,
             Text             = "AudioLeash",
             Visible          = true,
@@ -688,19 +688,6 @@ public sealed class AudioLeashContext : ApplicationContext
             return device.FriendlyName;
         }
         catch (Exception) { return null; }
-    }
-
-    private static Icon GetTrayIcon()
-    {
-        try
-        {
-            using var stream = System.Reflection.Assembly.GetExecutingAssembly()
-                .GetManifestResourceStream("AudioLeash.Resources.icon.ico");
-            if (stream is not null)
-                return new Icon(stream);
-        }
-        catch { /* fall through to default */ }
-        return SystemIcons.Application;
     }
 
     private void Exit_Click(object? sender, EventArgs e)
