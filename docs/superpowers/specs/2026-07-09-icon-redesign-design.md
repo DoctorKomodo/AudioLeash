@@ -123,10 +123,18 @@ than 16x16.
 **Automated** (`AudioLeash.Tests`, reading the embedded resource):
 
 1. The `.ico` carries all six sizes: 16, 32, 48, 64, 128, 256.
-2. The 16px frame is **not** a plain downscale of the 32px frame — decode both,
-   bilinear-downscale the 32px to 16px, and assert the per-pixel difference from
-   the real 16px frame exceeds a resampling-noise threshold. This is what
-   guarantees the hand-tuned small artwork actually shipped.
+2. The 16px frame resolves as crisp artwork, not dissolved mush, via two
+   structural guards: it contains at least 20 near-white pixels (luminance >
+   0.95), and its bright pixels (luminance > 0.80) form exactly 2 connected
+   masses — the speaker and the carabiner ring. Regenerating with
+   `SIMPLIFIED_UP_TO = 0` (all frames from the full hairline geometry) yields 8
+   near-white pixels and 5 masses, so both tests fail. An earlier version of
+   this guard bilinear-downscaled the 32px frame to 16px and asserted the
+   per-pixel difference from the real 16px frame exceeded a resampling-noise
+   threshold; that was abandoned because it separated good artwork from bad by
+   only 1.34x (5.60 vs 4.17), since both frames are independent LANCZOS
+   reductions of a supersampled render and differ substantially either way.
+   The structural guard separates by 3.4x.
 3. Mean luminance contrast between glyph pixels and tile pixels at 16px clears a
    minimum ratio.
 
