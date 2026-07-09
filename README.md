@@ -14,7 +14,7 @@ Plug in a USB headset, dock your laptop, or join a call, and Windows loves to si
 
 During setup you can tick **"Start with Windows"** so AudioLeash is on guard after every reboot. You can change this any time from the tray menu.
 
-> **Requirements:** Windows 10 or 11, and the **.NET 10 Desktop Runtime**. If it isn't installed, the setup wizard points you to the download.
+> **Requirements:** Windows 10 or 11, and the **.NET 10 Desktop Runtime**. If it isn't installed, AudioLeash offers you the download link the first time you launch it.
 
 ---
 
