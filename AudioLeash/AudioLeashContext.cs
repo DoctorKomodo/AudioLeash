@@ -25,8 +25,17 @@ public sealed class AudioLeashContext : ApplicationContext
     private readonly SettingsService         _settingsService;
     private readonly StartupService          _startupService;
     private readonly Font                    _sectionHeaderFont;
+    private readonly System.Windows.Forms.Timer _renderDebounce;
+    private readonly System.Windows.Forms.Timer _captureDebounce;
     private string?                          _savedPlaybackDeviceName;
     private string?                          _savedCaptureDeviceName;
+
+    /// <summary>
+    /// How long the selected device's state must stay settled before AudioLeash
+    /// reacts. Absorbs rapid disconnect/reconnect flapping (e.g. an HDMI/eARC
+    /// handshake black-screen) so a burst collapses to a single notification.
+    /// </summary>
+    private const int DebounceMs = 1000;
 
     public AudioLeashContext()
     {
@@ -37,6 +46,14 @@ public sealed class AudioLeashContext : ApplicationContext
         _contextMenu      = new ContextMenuStrip();
         _sectionHeaderFont = new Font(_contextMenu.Font, FontStyle.Bold);
         ApplyTheme();
+
+        // Per-flow debounce timers. Each device state change re-arms the relevant
+        // timer; only when it stops flapping for DebounceMs do we reconcile and
+        // notify once. WinForms timers tick on the UI thread.
+        _renderDebounce  = new System.Windows.Forms.Timer { Interval = DebounceMs };
+        _captureDebounce = new System.Windows.Forms.Timer { Interval = DebounceMs };
+        _renderDebounce.Tick  += (_, _) => { _renderDebounce.Stop();  ReconcileDeviceState(DataFlow.Render); };
+        _captureDebounce.Tick += (_, _) => { _captureDebounce.Stop(); ReconcileDeviceState(DataFlow.Capture); };
 
         _trayIcon = new NotifyIcon
         {
@@ -372,13 +389,12 @@ public sealed class AudioLeashContext : ApplicationContext
 
             case RestoreDecision.Suspend:
                 // Device is unavailable — keep the selection but suspend enforcement.
-                // The OnDeviceStateChanged handler will restore when it reconnects.
-                selection.SetDeviceAvailability(false);
-                SafeInvoke(() =>
-                {
-                    UpdateTrayTooltip();
-                    RefreshDeviceList();
-                });
+                // Route through the debouncer rather than reacting immediately: during
+                // an HDMI/eARC flap the default bounces away and back repeatedly, and we
+                // want a single settled notification (or none if it recovers), not one
+                // per bounce. The debounced reconcile will notify "Disconnected" only if
+                // the device is still gone once flapping stops, and restore it otherwise.
+                ArmDebounce(flow);
                 break;
 
             case RestoreDecision.Restore:
@@ -402,6 +418,13 @@ public sealed class AudioLeashContext : ApplicationContext
                         try
                         {
                             _policyConfig.SetDefaultEndpoint(restoreId);
+
+                            // Keep the committed availability in sync with this immediate
+                            // restore. The device is present (Restore only fires when it is),
+                            // so if a debounce tick is pending it will now evaluate
+                            // (available -> available) = ReassertSilently and won't fire a
+                            // duplicate "Reconnected" balloon on top of this "Restored" one.
+                            selection.SetDeviceAvailability(true);
 
                             var restoreDevices = _enumerator
                                 .EnumerateAudioEndPoints(flow, DeviceState.Active)
@@ -445,94 +468,154 @@ public sealed class AudioLeashContext : ApplicationContext
     /// Called by <see cref="AudioNotificationClient"/> on a Windows audio thread
     /// when a device's state changes (connected, disconnected, etc.).
     /// </summary>
+    /// <remarks>
+    /// We don't act on the transition directly. A single physical event (e.g. an
+    /// HDMI/eARC handshake) can produce many rapid disconnect/reconnect transitions;
+    /// reacting to each one floods the user with notifications. Instead we re-arm a
+    /// per-flow debounce timer and let <see cref="ReconcileDeviceState"/> act once the
+    /// endpoint has settled. The final state is re-queried at settle time, so the
+    /// specific <paramref name="newState"/> here is irrelevant.
+    /// </remarks>
     private void OnDeviceStateChanged(string deviceId, DeviceState newState)
     {
-        bool isNowActive = newState == DeviceState.Active;
-
-        ProcessDeviceStateChange(DataFlow.Render, _selection, deviceId, isNowActive);
-        ProcessDeviceStateChange(DataFlow.Capture, _captureSelection, deviceId, isNowActive);
+        if (_selection.SelectedDeviceId == deviceId)        ArmDebounce(DataFlow.Render);
+        if (_captureSelection.SelectedDeviceId == deviceId) ArmDebounce(DataFlow.Capture);
     }
 
-    private void ProcessDeviceStateChange(
+    /// <summary>
+    /// (Re)starts the debounce timer for the given flow. Marshals to the UI thread
+    /// because WinForms timers must be started from the thread that owns them.
+    /// </summary>
+    private void ArmDebounce(DataFlow flow) =>
+        SafeInvoke(() =>
+        {
+            var timer = flow == DataFlow.Render ? _renderDebounce : _captureDebounce;
+            timer.Stop();
+            timer.Start();
+        });
+
+    /// <summary>
+    /// Runs on the UI thread once the selected device for <paramref name="flow"/> has
+    /// stopped flapping. Re-queries the device's actual availability and emits at most
+    /// one notification reflecting the net change since the last notified state.
+    /// </summary>
+    private void ReconcileDeviceState(DataFlow flow)
+    {
+        // Runs from a WinForms Timer.Tick; an unhandled throw here would surface on the
+        // UI message loop as a ThreadException. Enumeration/default queries are COM calls
+        // that can fail transiently, so guard the whole reconcile.
+        try
+        {
+            ReconcileDeviceStateCore(flow);
+        }
+        catch (Exception) { /* transient COM/enumeration failure; next event re-arms */ }
+    }
+
+    private void ReconcileDeviceStateCore(DataFlow flow)
+    {
+        var selection = flow == DataFlow.Render ? _selection : _captureSelection;
+        if (selection.SelectedDeviceId is null) return;
+
+        string selectedId = selection.SelectedDeviceId;
+        bool available = IsDeviceActive(flow, selectedId);
+        var outcome = selection.EvaluateSettledState(available);
+        string flowLabel = flow == DataFlow.Render ? "Audio Device" : "Recording Device";
+
+        switch (outcome)
+        {
+            case SettledOutcome.NotifyDisconnected:
+            {
+                string? savedName = flow == DataFlow.Render
+                    ? _savedPlaybackDeviceName
+                    : _savedCaptureDeviceName;
+                string displayName = GetDeviceName(selectedId) ?? savedName ?? flowLabel.ToLower();
+
+                UpdateTrayTooltip();
+                _trayIcon.ShowBalloonTip(
+                    timeout:  3000,
+                    tipTitle: $"{flowLabel} Disconnected",
+                    tipText:  $"{displayName} is no longer available. Waiting for reconnection…",
+                    tipIcon:  ToolTipIcon.Warning);
+                RefreshDeviceList();
+                break;
+            }
+
+            case SettledOutcome.NotifyReconnected:
+                RestoreSelectedDevice(flow, selection, selectedId, notify: true);
+                break;
+
+            case SettledOutcome.ReassertSilently:
+                RestoreSelectedDevice(flow, selection, selectedId, notify: false);
+                break;
+
+            case SettledOutcome.None:
+                UpdateTrayTooltip();
+                RefreshDeviceList();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Re-asserts the selected device as the default for <paramref name="flow"/> (only
+    /// if Windows isn't already on it, to avoid redundant churn) and optionally shows a
+    /// "Reconnected" notification. Runs on the UI thread.
+    /// </summary>
+    private void RestoreSelectedDevice(
         DataFlow flow,
         DeviceSelectionState selection,
         string deviceId,
-        bool isNowActive)
+        bool notify)
     {
-        if (selection.SelectedDeviceId != deviceId) return;
-
-        bool wasAvailable = selection.IsDeviceAvailable;
-        var decision = selection.EvaluateDeviceStateChange(deviceId, isNowActive);
         string flowLabel = flow == DataFlow.Render ? "Audio Device" : "Recording Device";
-
-        switch (decision)
+        try
         {
-            case RestoreDecision.Restore:
+            if (GetCurrentDefaultId(flow) != deviceId)
+            {
                 selection.IsInternalChange = true;
-                try
-                {
-                    SafeInvoke(() =>
-                    {
-                        try
-                        {
-                            _policyConfig.SetDefaultEndpoint(deviceId);
+                try { _policyConfig.SetDefaultEndpoint(deviceId); }
+                finally { selection.IsInternalChange = false; }
+            }
 
-                            string? deviceName = GetDeviceName(deviceId);
-                            string displayName = deviceName ?? deviceId;
-
-                            UpdateTrayTooltip();
-
-                            _trayIcon.ShowBalloonTip(
-                                timeout:  3000,
-                                tipTitle: $"{flowLabel} Reconnected",
-                                tipText:  $"Switched back to: {displayName}",
-                                tipIcon:  ToolTipIcon.Info);
-                            RefreshDeviceList();
-                        }
-                        catch (Exception ex)
-                        {
-                            _trayIcon.ShowBalloonTip(
-                                timeout:  3000,
-                                tipTitle: "Restore Failed",
-                                tipText:  $"Could not restore {flowLabel.ToLower()}:\n{ex.Message}",
-                                tipIcon:  ToolTipIcon.Error);
-                        }
-                        finally
-                        {
-                            selection.IsInternalChange = false;
-                        }
-                    });
-                }
-                catch
-                {
-                    selection.IsInternalChange = false;
-                }
-                break;
-
-            case RestoreDecision.NoAction:
-                // Device just became unavailable — notify and update UI
-                if (wasAvailable && !isNowActive)
-                {
-                    SafeInvoke(() =>
-                    {
-                        string? savedName = flow == DataFlow.Render
-                            ? _savedPlaybackDeviceName
-                            : _savedCaptureDeviceName;
-                        string? deviceName = GetDeviceName(deviceId) ?? savedName;
-                        string displayName = deviceName ?? flowLabel.ToLower();
-
-                        UpdateTrayTooltip();
-
-                        _trayIcon.ShowBalloonTip(
-                            timeout:  3000,
-                            tipTitle: $"{flowLabel} Disconnected",
-                            tipText:  $"{displayName} is no longer available. Waiting for reconnection…",
-                            tipIcon:  ToolTipIcon.Warning);
-                        RefreshDeviceList();
-                    });
-                }
-                break;
+            UpdateTrayTooltip();
+            if (notify)
+            {
+                string displayName = GetDeviceName(deviceId) ?? deviceId;
+                _trayIcon.ShowBalloonTip(
+                    timeout:  3000,
+                    tipTitle: $"{flowLabel} Reconnected",
+                    tipText:  $"Switched back to: {displayName}",
+                    tipIcon:  ToolTipIcon.Info);
+            }
+            RefreshDeviceList();
         }
+        catch (Exception ex)
+        {
+            _trayIcon.ShowBalloonTip(
+                timeout:  3000,
+                tipTitle: "Restore Failed",
+                tipText:  $"Could not restore {flowLabel.ToLower()}:\n{ex.Message}",
+                tipIcon:  ToolTipIcon.Error);
+        }
+    }
+
+    /// <summary>Returns whether <paramref name="deviceId"/> is currently an active endpoint for the flow.</summary>
+    private bool IsDeviceActive(DataFlow flow, string deviceId)
+    {
+        var active = _enumerator.EnumerateAudioEndPoints(flow, DeviceState.Active).ToList();
+        bool found = active.Any(d => d.ID == deviceId);
+        foreach (var d in active) d.Dispose();
+        return found;
+    }
+
+    /// <summary>Returns the ID of the current Multimedia default endpoint for the flow, or null if none.</summary>
+    private string? GetCurrentDefaultId(DataFlow flow)
+    {
+        try
+        {
+            using var device = _enumerator.GetDefaultAudioEndpoint(flow, Role.Multimedia);
+            return device.ID;
+        }
+        catch (System.Runtime.InteropServices.COMException) { return null; }
     }
 
     private void SafeInvoke(Action action)
@@ -632,6 +715,11 @@ public sealed class AudioLeashContext : ApplicationContext
         {
             WindowsTheme.Changed -= OnThemeChanged;
             _enumerator.UnregisterEndpointNotificationCallback(_notificationClient);
+
+            _renderDebounce.Stop();
+            _captureDebounce.Stop();
+            _renderDebounce.Dispose();
+            _captureDebounce.Dispose();
 
             foreach (ToolStripItem item in _contextMenu.Items)
             {

@@ -107,6 +107,7 @@ AudioLeash/
 - Core logic lives in `AudioLeashContext.cs`. `DeviceSelectionState.cs` (pure, unit-testable selection state machine) and `PolicyConfigClient.cs` (COM interop that sets the Windows default endpoint) are intentional splits.
 - `IMMNotificationClient` callbacks arrive on a Windows COM audio thread and are marshalled back to the UI/STA thread via `SafeInvoke` before touching any UI.
 - `DeviceSelectionState.IsInternalChange` (volatile) prevents feedback loops where the app's own device switch would otherwise re-trigger the change handler.
+- **Debounced device-state handling** — connect/disconnect events for the selected device don't act immediately. `OnDeviceStateChanged` (and the `Suspend` branch of `OnDefaultDeviceChanged`) re-arm a per-flow `System.Windows.Forms.Timer` (`DebounceMs`, 1000 ms). Only once the endpoint stops flapping does `ReconcileDeviceState` re-query the device's actual availability and call `DeviceSelectionState.EvaluateSettledState`, which returns a single `SettledOutcome` reflecting the net change. This collapses rapid flapping (e.g. an HDMI/eARC handshake) into at most one notification — a flap that ends back on the selected device restores it silently. The immediate `Restore` (leash-yank) path in `OnDefaultDeviceChanged` is unaffected and stays snappy.
 - The user-selected device (ID and friendly name) is persisted to `%AppData%\AudioLeash\settings.json` via `SettingsService` and restored on startup.
 
 ## Known Issues
