@@ -543,42 +543,81 @@ public class IconAssetTests
     }
 
     /// <summary>
-    /// The 16px frame must be redrawn, not shrunk. A hairline carabiner ring
-    /// downscaled from 32px dissolves into partial-alpha grey — the exact defect
-    /// this icon replaced. Downscale the 32px frame and assert the real 16px
-    /// frame differs by more than resampling noise.
+    /// The 16px frame must be redrawn, not shrunk. This asserts the design
+    /// intent directly: the glyph resolves into exactly two bright masses — the
+    /// speaker and the carabiner ring — separated by tile pixels, and its white
+    /// is really white rather than antialiased grey.
     /// </summary>
+    /// <remarks>
+    /// An earlier version compared the 16px frame against a bilinear downscale
+    /// of the 32px frame. That metric separated good artwork from bad by only
+    /// 1.34x, because both are independent LANCZOS reductions of a supersampled
+    /// render and differ substantially either way. These two assertions separate
+    /// by 3.4x: regenerating with SIMPLIFIED_UP_TO = 0 (all frames from the full
+    /// hairline geometry) yields 5 fragmented masses and 8 near-white pixels,
+    /// against 2 masses and 27 near-white pixels for the real artwork.
+    /// </remarks>
     [Fact]
-    public void SmallFrame_IsRedrawn_NotDownscaledFromTheLargerFrame()
+    public void SmallFrame_ResolvesIntoTwoCrispMasses()
     {
-        var frames = ReadFrames();
-        using Bitmap actual = Decode(frames.Single(f => f.Width == 16));
-        using Bitmap large = Decode(frames.Single(f => f.Width == 32));
+        using Bitmap frame = Decode(ReadFrames().Single(f => f.Width == 16));
 
-        using var downscaled = new Bitmap(16, 16);
-        using (var g = Graphics.FromImage(downscaled))
-        {
-            g.InterpolationMode = InterpolationMode.HighQualityBilinear;
-            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-            g.DrawImage(large, 0, 0, 16, 16);
-        }
-
-        double total = 0;
+        int nearWhite = 0;
         for (int y = 0; y < 16; y++)
         for (int x = 0; x < 16; x++)
         {
-            Color a = actual.GetPixel(x, y);
-            Color b = downscaled.GetPixel(x, y);
-            total += Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G)
-                   + Math.Abs(a.B - b.B) + Math.Abs(a.A - b.A);
+            Color c = frame.GetPixel(x, y);
+            if (c.A >= 128 && Luminance(c) > 0.95) nearWhite++;
         }
 
-        double meanAbsDiff = total / (16 * 16 * 4);
-
         Assert.True(
-            meanAbsDiff > DownscaleDifferenceThreshold,
-            $"16px frame differs from a downscaled 32px frame by only {meanAbsDiff:F2}; " +
-            "it appears to be a plain downscale rather than redrawn artwork.");
+            nearWhite >= MinimumNearWhitePixels,
+            $"only {nearWhite} near-white pixels at 16px (need >= {MinimumNearWhitePixels}); " +
+            "the glyph has dissolved into antialiased grey — is it being downscaled?");
+
+        Assert.Equal(2, CountBrightMasses(frame));
+    }
+
+    /// <summary>
+    /// Flood-fills the bright (glyph) pixels into 4-connected components. The
+    /// speaker and the ring must remain two separate masses: if they merge the
+    /// icon reads as one blob, and if they fragment it has dissolved.
+    /// </summary>
+    private static int CountBrightMasses(Bitmap frame)
+    {
+        bool IsBright(int x, int y)
+        {
+            Color c = frame.GetPixel(x, y);
+            return c.A >= 128 && Luminance(c) > 0.80;
+        }
+
+        var seen = new bool[16, 16];
+        int masses = 0;
+
+        for (int y = 0; y < 16; y++)
+        for (int x = 0; x < 16; x++)
+        {
+            if (seen[x, y] || !IsBright(x, y)) continue;
+
+            masses++;
+            var stack = new Stack<(int X, int Y)>();
+            stack.Push((x, y));
+
+            while (stack.Count > 0)
+            {
+                var (cx, cy) = stack.Pop();
+                if (cx < 0 || cx > 15 || cy < 0 || cy > 15) continue;
+                if (seen[cx, cy] || !IsBright(cx, cy)) continue;
+
+                seen[cx, cy] = true;
+                stack.Push((cx + 1, cy));
+                stack.Push((cx - 1, cy));
+                stack.Push((cx, cy + 1));
+                stack.Push((cx, cy - 1));
+            }
+        }
+
+        return masses;
     }
 
     /// <summary>
@@ -605,18 +644,22 @@ public class IconAssetTests
         Assert.InRange(fraction, 0.08, 0.35);
     }
 
-    private const double DownscaleDifferenceThreshold = 12.0;
+    // Real artwork scores 27; the hairline regression scores 8.
+    private const int MinimumNearWhitePixels = 20;
 }
 ```
 
-- [ ] **Step 2: Run the tests and calibrate the threshold**
+- [ ] **Step 2: Run the tests**
 
 Run: `dotnet test AudioLeash.sln --filter FullyQualifiedName~IconAssetTests`
 
-`DownscaleDifferenceThreshold` is a **placeholder value that must be calibrated against the real artwork**, not accepted as-is.
+Expected: all three pass against the committed icon.
 
-- `Icon_ContainsAllSixSizes` must pass.
-- If `SmallFrame_IsRedrawn...` fails, read the reported `meanAbsDiff`. If it is a healthy margin above zero (say above 20), set the threshold to roughly **half** the measured value and re-run. If it is genuinely small (under 5), the simplified geometry is too close to the full geometry — go back to Task 2 Step 4 and differentiate the 16px artwork further. **Do not lower the threshold to force a pass; that defeats the test.**
+`MinimumNearWhitePixels = 20` and the `Assert.Equal(2, ...)` mass count are
+calibrated against measured values — real artwork gives 27 near-white pixels and
+2 masses; the hairline regression gives 8 and 5. **Do not relax either bound to
+make a red test green.** If they fail, the artwork regressed: fix it in Task 2.
+
 - If `Glyph_IsBrightAndPresent_At16px` fails, print `fraction`. Below 0.08 means the glyph is too small or too dim at 16px; above 0.35 means it floods the tile. Fix the artwork in Task 2, not the bounds.
 
 - [ ] **Step 3: Run the whole suite**
@@ -631,7 +674,7 @@ A regression test nobody has seen fail is a test you do not know works. Temporar
 
 Run: `python tools/generate-icon.py && dotnet test AudioLeash.sln --filter FullyQualifiedName~IconAssetTests`
 
-Expected: `SmallFrame_IsRedrawn_NotDownscaledFromTheLargerFrame` **FAILS**, and quite possibly `Glyph_IsBrightAndPresent_At16px` too.
+Expected: `SmallFrame_ResolvesIntoTwoCrispMasses` **FAILS** — on the near-white count (8 < 20) and/or the mass count (5 != 2).
 
 Then revert `SIMPLIFIED_UP_TO` to `32`, regenerate, and confirm both pass again. Verify `git status --short` shows `icon.ico` unmodified — the generator is deterministic, so regeneration must reproduce the committed bytes exactly. If it does not, the generator has a non-deterministic input and that must be fixed before proceeding.
 
