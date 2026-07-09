@@ -70,79 +70,82 @@ public class DeviceSelectionStateTests
         Assert.Equal(RestoreDecision.Suspend, result);
     }
 
-    // ── EvaluateDeviceStateChange ─────────────────────────────────────────
+    // ── EvaluateSettledState ──────────────────────────────────────────────
 
     [Fact]
-    public void EvaluateDeviceStateChange_WhenNoSelection_ReturnsNoAction()
+    public void EvaluateSettledState_WhenNoSelection_ReturnsNone()
     {
         var state = new DeviceSelectionState();
 
-        var result = state.EvaluateDeviceStateChange("device-A", isNowActive: true);
+        var result = state.EvaluateSettledState(isAvailableNow: true);
 
-        Assert.Equal(RestoreDecision.NoAction, result);
+        Assert.Equal(SettledOutcome.None, result);
     }
 
     [Fact]
-    public void EvaluateDeviceStateChange_WhenDifferentDevice_ReturnsNoAction()
-    {
-        var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
-
-        var result = state.EvaluateDeviceStateChange("device-B", isNowActive: true);
-
-        Assert.Equal(RestoreDecision.NoAction, result);
-    }
-
-    [Fact]
-    public void EvaluateDeviceStateChange_WhenSelectedDeviceBecomesActive_ReturnsRestore()
+    public void EvaluateSettledState_WhenSelectedDeviceBecomesAvailable_ReturnsReconnected()
     {
         var state = new DeviceSelectionState();
         state.SelectDevice("device-A");
         state.SetDeviceAvailability(false);
 
-        var result = state.EvaluateDeviceStateChange("device-A", isNowActive: true);
+        var result = state.EvaluateSettledState(isAvailableNow: true);
 
-        Assert.Equal(RestoreDecision.Restore, result);
+        Assert.Equal(SettledOutcome.NotifyReconnected, result);
         Assert.True(state.IsDeviceAvailable);
     }
 
     [Fact]
-    public void EvaluateDeviceStateChange_WhenSelectedDeviceBecomesInactive_ReturnsNoAction()
-    {
-        var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
-
-        var result = state.EvaluateDeviceStateChange("device-A", isNowActive: false);
-
-        Assert.Equal(RestoreDecision.NoAction, result);
-        Assert.False(state.IsDeviceAvailable);
-    }
-
-    [Fact]
-    public void EvaluateDeviceStateChange_WhenIsInternalChange_ReturnsNoAction()
-    {
-        var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
-        state.SetDeviceAvailability(false);
-        state.IsInternalChange = true;
-
-        var result = state.EvaluateDeviceStateChange("device-A", isNowActive: true);
-
-        Assert.Equal(RestoreDecision.NoAction, result);
-        // Availability still updated even during internal change
-        Assert.True(state.IsDeviceAvailable);
-    }
-
-    [Fact]
-    public void EvaluateDeviceStateChange_WhenAlreadyActive_ReturnsNoAction()
+    public void EvaluateSettledState_WhenSelectedDeviceBecomesUnavailable_ReturnsDisconnected()
     {
         var state = new DeviceSelectionState();
         state.SelectDevice("device-A");
         // IsDeviceAvailable defaults to true via SelectDevice
 
-        var result = state.EvaluateDeviceStateChange("device-A", isNowActive: true);
+        var result = state.EvaluateSettledState(isAvailableNow: false);
 
-        Assert.Equal(RestoreDecision.NoAction, result);
+        Assert.Equal(SettledOutcome.NotifyDisconnected, result);
+        Assert.False(state.IsDeviceAvailable);
+    }
+
+    [Fact]
+    public void EvaluateSettledState_WhenStillAvailable_ReturnsReassertSilently()
+    {
+        var state = new DeviceSelectionState();
+        state.SelectDevice("device-A");
+        // Was available, settled available (a flap that recovered)
+
+        var result = state.EvaluateSettledState(isAvailableNow: true);
+
+        Assert.Equal(SettledOutcome.ReassertSilently, result);
+        Assert.True(state.IsDeviceAvailable);
+    }
+
+    [Fact]
+    public void EvaluateSettledState_WhenStillUnavailable_ReturnsNone()
+    {
+        var state = new DeviceSelectionState();
+        state.SelectDevice("device-A");
+        state.SetDeviceAvailability(false);
+
+        var result = state.EvaluateSettledState(isAvailableNow: false);
+
+        Assert.Equal(SettledOutcome.None, result);
+        Assert.False(state.IsDeviceAvailable);
+    }
+
+    [Fact]
+    public void EvaluateSettledState_FlapThatRecovers_DoesNotReportDisconnectOrReconnect()
+    {
+        // Simulates a rapid disconnect/reconnect burst that is debounced to a single
+        // settled evaluation: the device was available before and is available after,
+        // so the net outcome must be silent (no disconnect/reconnect notifications).
+        var state = new DeviceSelectionState();
+        state.SelectDevice("device-A");
+
+        var result = state.EvaluateSettledState(isAvailableNow: true);
+
+        Assert.Equal(SettledOutcome.ReassertSilently, result);
     }
 
     // ── SelectDevice / ClearSelection ────────────────────────────────────
