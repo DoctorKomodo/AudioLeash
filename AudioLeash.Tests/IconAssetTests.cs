@@ -1,5 +1,4 @@
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using AudioLeash;
 
 namespace AudioLeash.Tests;
@@ -67,42 +66,81 @@ public class IconAssetTests
     }
 
     /// <summary>
-    /// The 16px frame must be redrawn, not shrunk. A hairline carabiner ring
-    /// downscaled from 32px dissolves into partial-alpha grey — the exact defect
-    /// this icon replaced. Downscale the 32px frame and assert the real 16px
-    /// frame differs by more than resampling noise.
+    /// The 16px frame must be redrawn, not shrunk. This asserts the design
+    /// intent directly: the glyph resolves into exactly two bright masses — the
+    /// speaker and the carabiner ring — separated by tile pixels, and its white
+    /// is really white rather than antialiased grey.
     /// </summary>
+    /// <remarks>
+    /// An earlier version compared the 16px frame against a bilinear downscale
+    /// of the 32px frame. That metric separated good artwork from bad by only
+    /// 1.34x, because both are independent LANCZOS reductions of a supersampled
+    /// render and differ substantially either way. These two assertions separate
+    /// by 3.4x: regenerating with SIMPLIFIED_UP_TO = 0 (all frames from the full
+    /// hairline geometry) yields 5 fragmented masses and 8 near-white pixels,
+    /// against 2 masses and 27 near-white pixels for the real artwork.
+    /// </remarks>
     [Fact]
-    public void SmallFrame_IsRedrawn_NotDownscaledFromTheLargerFrame()
+    public void SmallFrame_ResolvesIntoTwoCrispMasses()
     {
-        var frames = ReadFrames();
-        using Bitmap actual = Decode(frames.Single(f => f.Width == 16));
-        using Bitmap large = Decode(frames.Single(f => f.Width == 32));
+        using Bitmap frame = Decode(ReadFrames().Single(f => f.Width == 16));
 
-        using var downscaled = new Bitmap(16, 16);
-        using (var g = Graphics.FromImage(downscaled))
-        {
-            g.InterpolationMode = InterpolationMode.HighQualityBilinear;
-            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-            g.DrawImage(large, 0, 0, 16, 16);
-        }
-
-        double total = 0;
+        int nearWhite = 0;
         for (int y = 0; y < 16; y++)
         for (int x = 0; x < 16; x++)
         {
-            Color a = actual.GetPixel(x, y);
-            Color b = downscaled.GetPixel(x, y);
-            total += Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G)
-                   + Math.Abs(a.B - b.B) + Math.Abs(a.A - b.A);
+            Color c = frame.GetPixel(x, y);
+            if (c.A >= 128 && Luminance(c) > 0.95) nearWhite++;
         }
 
-        double meanAbsDiff = total / (16 * 16 * 4);
-
         Assert.True(
-            meanAbsDiff > DownscaleDifferenceThreshold,
-            $"16px frame differs from a downscaled 32px frame by only {meanAbsDiff:F2}; " +
-            "it appears to be a plain downscale rather than redrawn artwork.");
+            nearWhite >= MinimumNearWhitePixels,
+            $"only {nearWhite} near-white pixels at 16px (need >= {MinimumNearWhitePixels}); " +
+            "the glyph has dissolved into antialiased grey — is it being downscaled?");
+
+        Assert.Equal(2, CountBrightMasses(frame));
+    }
+
+    /// <summary>
+    /// Flood-fills the bright (glyph) pixels into 4-connected components. The
+    /// speaker and the ring must remain two separate masses: if they merge the
+    /// icon reads as one blob, and if they fragment it has dissolved.
+    /// </summary>
+    private static int CountBrightMasses(Bitmap frame)
+    {
+        bool IsBright(int x, int y)
+        {
+            Color c = frame.GetPixel(x, y);
+            return c.A >= 128 && Luminance(c) > 0.80;
+        }
+
+        var seen = new bool[16, 16];
+        int masses = 0;
+
+        for (int y = 0; y < 16; y++)
+        for (int x = 0; x < 16; x++)
+        {
+            if (seen[x, y] || !IsBright(x, y)) continue;
+
+            masses++;
+            var stack = new Stack<(int X, int Y)>();
+            stack.Push((x, y));
+
+            while (stack.Count > 0)
+            {
+                var (cx, cy) = stack.Pop();
+                if (cx < 0 || cx > 15 || cy < 0 || cy > 15) continue;
+                if (seen[cx, cy] || !IsBright(cx, cy)) continue;
+
+                seen[cx, cy] = true;
+                stack.Push((cx + 1, cy));
+                stack.Push((cx - 1, cy));
+                stack.Push((cx, cy + 1));
+                stack.Push((cx, cy - 1));
+            }
+        }
+
+        return masses;
     }
 
     /// <summary>
@@ -129,15 +167,6 @@ public class IconAssetTests
         Assert.InRange(fraction, 0.08, 0.35);
     }
 
-    // Measured meanAbsDiff between the real 16px frame and a bilinear
-    // downscale of the 32px frame is ~5.60 for the committed artwork
-    // (tools/generate-icon.py, sha256 d2ea95f6...). A naive "half of that"
-    // threshold (2.8) does not actually discriminate: mutating the generator
-    // (SIMPLIFIED_UP_TO = 0, forcing the 16px frame to use unsimplified
-    // hairline geometry instead of being redrawn with legible geometry)
-    // still produces meanAbsDiff ~4.17, which would pass a 2.8 threshold.
-    // 4.9 sits strictly between the two measured values (4.17 mutated,
-    // 5.60 committed), verified by re-running the mutation with this
-    // threshold in place (see task-3-report.md).
-    private const double DownscaleDifferenceThreshold = 4.9;
+    // Real artwork scores 27; the hairline regression scores 8.
+    private const int MinimumNearWhitePixels = 20;
 }
