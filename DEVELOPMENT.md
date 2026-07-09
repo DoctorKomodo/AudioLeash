@@ -33,6 +33,26 @@ dotnet test AudioLeash.sln
 
 Tests use **xUnit** + **NSubstitute** and live in `AudioLeash.Tests/`. They cover the pure logic — the device-selection state machine, settings persistence, startup registration, and theme detection — and deliberately avoid anything that needs a live Windows audio stack.
 
+## Regenerating the Icon
+
+`AudioLeash/Resources/icon.ico` is generated, not hand-drawn. The source of truth is `tools/generate-icon.py`.
+
+```powershell
+python -m pip install Pillow            # dev-time only; not a build dependency
+python tools/generate-icon.py           # rewrites AudioLeash/Resources/icon.ico
+python tools/generate-icon.py --preview # also dumps PNGs to build/icon-preview/
+```
+
+The script renders six frames (16, 32, 48, 64, 128, 256). The 16px and 32px frames are drawn from **simplified geometry** — a thicker carabiner, no gate detail, coordinates snapped to whole device pixels — rather than downscaled from a large master. A hairline ring shrunk to 16px dissolves into grey mush, which is exactly what the previous icon did.
+
+The ring keeps its inner cutout even at 16px: a solid pill at that size is indistinguishable from a vertical bar. What carries legibility in the tray is the 1px gap between the speaker and the ring, which keeps them as two separate masses.
+
+`IconAssetTests` enforces that. It decodes the shipped 16px frame and asserts it resolves into **exactly two bright masses** — the speaker and the ring — with at least 20 near-white pixels. Regenerating with `SIMPLIFIED_UP_TO = 0`, so every frame comes from the full hairline geometry, produces five fragmented masses and eight near-white pixels, and the tests fail. Do not relax those bounds to make a red test green; they mean the artwork regressed.
+
+The tile geometry (corner radius 15.3% of width, vertical gradient, white glyph at ~54% width) is shared with the AudioStreamer icon so the two apps read as a family. AudioLeash's gradient is `#22C3DE` → `#0E7C96`.
+
+The generator is deterministic: re-running it on an unchanged script reproduces the committed `.ico` byte-for-byte.
+
 ## Building the Installer
 
 Produces `installer\Output\AudioLeash-Setup.exe`, a per-user installer that needs no admin rights.
@@ -48,35 +68,6 @@ Produces `installer\Output\AudioLeash-Setup.exe`, a per-user installer that need
 ```
 
 The installer checks for the [.NET 10 Windows Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/10.0), installs to `%LOCALAPPDATA%\AudioLeash` (no UAC prompt), adds a Start Menu entry, and offers an optional "Start with Windows" checkbox that pre-sets the same registry key the tray menu toggle manages.
-
-## Regenerating the Icon
-
-`AudioLeash/Resources/icon.ico` is generated, not hand-drawn. The source of
-truth is `tools/generate-icon.py`.
-
-```powershell
-python -m pip install Pillow          # dev-time only; not a build dependency
-python tools/generate-icon.py           # rewrites AudioLeash/Resources/icon.ico
-python tools/generate-icon.py --preview # also dumps PNGs to build/icon-preview/
-```
-
-The script renders six frames (16, 32, 48, 64, 128, 256). The 16px and 32px
-frames are drawn from **simplified geometry** — a thicker carabiner, no gate
-detail, coordinates snapped to whole device pixels — rather than downscaled
-from a large master. A hairline ring shrunk to 16px dissolves into grey mush,
-which is what the previous icon did. `IconAssetTests` enforces this: it fails
-if the 16px frame ever becomes a plain downscale of the 32px one.
-
-The ring keeps its inner cutout even at 16px: a solid pill there is
-indistinguishable from a vertical bar. What carries legibility at tray size is
-the 1px gap between speaker and ring, which keeps them as two separate masses.
-
-The tile geometry (corner radius 15.3% of width, vertical gradient, white glyph
-at ~54% width) is shared with the AudioStreamer icon so the two apps read as a
-family. AudioLeash's gradient is `#22C3DE` → `#0E7C96`.
-
-The generator is deterministic: re-running it on an unchanged script reproduces
-the committed `.ico` byte-for-byte.
 
 ### Versioning
 
