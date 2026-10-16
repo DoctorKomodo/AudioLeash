@@ -2,6 +2,10 @@
 
 Developer-facing documentation: building, testing, packaging, architecture, and the roadmap. For install and usage, see [README.md](README.md).
 
+## Repository Hosting
+
+The primary repository is a self-hosted Forgejo instance (`origin`). It is push-mirrored to [GitHub](https://github.com/DoctorKomodo/AudioLeash), which also hosts the Releases page. Push to Forgejo only; do not commit directly on GitHub, as the next mirror sync overwrites it.
+
 ## Tech Stack
 
 | Layer | Technology |
