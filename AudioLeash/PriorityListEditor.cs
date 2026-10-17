@@ -11,6 +11,7 @@ internal sealed record DeviceRow(string Id, string Name, string? Description, bo
 internal sealed class PriorityListEditor
 {
     private readonly List<DeviceRow> _ranked = [];
+    private readonly string[] _originalOrder;
     private readonly List<DeviceRow> _unranked = [];
 
     public PriorityListEditor(IReadOnlyList<RankedDevice> ranked, IEnumerable<DeviceRow> known)
@@ -30,7 +31,14 @@ internal sealed class PriorityListEditor
 
         _unranked.AddRange(knownById.Values.Where(k => !rankedIds.Contains(k.Id)));
         SortUnranked();
+        _originalOrder = _ranked.Select(r => r.Id).ToArray();
     }
+
+    /// <summary>
+    /// Whether the ranked order differs from the one the editor started with. Moving a row
+    /// and moving it back counts as no change.
+    /// </summary>
+    public bool HasChanges => !_ranked.Select(r => r.Id).SequenceEqual(_originalOrder, StringComparer.Ordinal);
 
     public IReadOnlyList<DeviceRow> Ranked => _ranked.ToArray();
 

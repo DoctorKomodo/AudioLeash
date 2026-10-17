@@ -27,7 +27,7 @@ AudioLeash lives in the system tray. **Click the tray icon** (left- or right-cli
 - **Spot a hijack** — if Windows has quietly switched away from your pick, the current default is labelled **(Windows default)** so you always know the real state.
 - **Clear Selection** — stop locking and let Windows manage devices on its own again. (With a priority list set up, **Return to priority order** takes its place — see below.)
 - **Settings…** — open the settings window to rank your devices (see [Device priority](#device-priority)).
-- **Start with Windows** — toggle launch-at-login on or off. Also available at the bottom of the settings window.
+- **Start with Windows** — toggle launch-at-login on or off. Also available as a switch at the bottom of the settings window.
 - **Exit** — quit the app.
 
 Once a device is locked you can forget about it. If Windows switches away — because you plugged something in, or an app grabbed the default — AudioLeash switches back automatically and shows a brief notification.
@@ -45,7 +45,7 @@ Instead of locking one device, you can rank several — say headphones first, sp
 - **Ranked devices** sit at the top, numbered in priority order. Drag a device to reorder it, or select it and use **▲**/**▼**.
 - Everything below the line *"Not ranked: AudioLeash won't switch to these on its own"* is left alone. Drag a device across the line (or use **▲**/**▼**) to rank or unrank it.
 - A ranked device that's unplugged keeps its place and shows **not connected**.
-- Nothing changes until you click **Save**; **Cancel** discards your edits.
+- There's no Save button: your new order takes effect when you close the settings window, so rearranging never switches your audio halfway. To undo a change, move the device back before closing.
 
 With a list in place, AudioLeash keeps the highest-ranked **connected** device as the default. Plug in a higher-ranked device and it switches up to it; unplug the current one and it falls back to the next. It never switches on its own to a device you haven't ranked. In the tray menu, ranked devices show their rank (e.g. `Headphones  #1`).
 

@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -6,34 +7,33 @@ namespace AudioLeash;
 
 /// <summary>
 /// The settings window: per-flow priority lists (Playback / Recording) under flat underline
-/// tabs, with "Start with Windows" and Save / Cancel in a footer band. Edits stay in the
-/// supplied <see cref="PriorityListEditor"/>s; nothing is applied here. The caller applies
-/// them when the form closes with <see cref="DialogResult.OK"/>.
+/// tabs, and a "Start with Windows" settings row with an on/off switch. There is no Save or
+/// Cancel: list edits stay in the supplied <see cref="PriorityListEditor"/>s and the caller
+/// applies them when the window closes (so rearranging never switches audio mid-edit), while
+/// the switch raises <see cref="StartWithWindowsToggled"/> immediately.
 /// </summary>
 internal sealed class SettingsForm : Form
 {
     private const string PlaybackHint  = "AudioLeash keeps the highest-ranked connected playback device as the default.";
     private const string RecordingHint = "AudioLeash keeps the highest-ranked connected recording device as the default.";
-    private const string RankHint      = " Drag devices, or use ▲/▼, to rank them.";
+    private const string RankHint      = " Drag devices, or use ▲/▼, to rank them. Changes apply when you close this window.";
 
     private readonly UnderlineTabStrip _tabs;
-    private readonly CheckBox _startWithWindows;
-    private readonly bool     _initialStartWithWindows;
-    private readonly Icon     _icon;
+    private readonly ToggleSwitch      _startWithWindows;
+    private readonly Icon              _icon;
 
     /// <param name="theme">Palette to draw with; defaults to the current Windows app theme.</param>
     public SettingsForm(
         PriorityListEditor playback, PriorityListEditor capture, bool startWithWindows, SettingsTheme? theme = null)
     {
         theme ??= SettingsTheme.Current;
-        _initialStartWithWindows = startWithWindows;
 
         SuspendLayout();
 
         AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode       = AutoScaleMode.Dpi;
-        ClientSize          = new Size(540, 480);
-        MinimumSize         = new Size(440, 360);
+        ClientSize          = new Size(540, 500);
+        MinimumSize         = new Size(440, 380);
         Text                = "AudioLeash Settings";
         StartPosition       = FormStartPosition.CenterScreen;
         MaximizeBox         = false;
@@ -44,7 +44,7 @@ internal sealed class SettingsForm : Form
         _icon               = TrayIconLoader.Load(SystemInformation.SmallIconSize);
         Icon                = _icon;
 
-        // ── Content: tabs, hint, the selected flow's list ──────────────
+        // ── Tabs, hint, the selected flow's list ────────────────────────
         var tabs = _tabs = new UnderlineTabStrip(theme)
         {
             Dock = DockStyle.Fill, Margin = new Padding(0), AccessibleName = "Device type",
@@ -75,11 +75,69 @@ internal sealed class SettingsForm : Form
             hint.Text = (isPlayback ? PlaybackHint : RecordingHint) + RankHint;
         };
 
+        // ── "Start with Windows" settings row (Windows 11 settings-card style) ──
+        _startWithWindows = new ToggleSwitch(theme)
+        {
+            Checked        = startWithWindows,
+            Anchor         = AnchorStyles.Right,
+            BackColor      = theme.Surface,
+            AccessibleName = "Start with Windows",
+            Margin         = new Padding(12, 0, 0, 0),
+        };
+        _startWithWindows.Toggled += (_, _) =>
+            StartWithWindowsToggled?.Invoke(this, EventArgs.Empty);
+
+        var startupTitle = new Label
+        {
+            Text = "Start with Windows", AutoSize = true, ForeColor = theme.Text, BackColor = theme.Surface,
+            Margin = new Padding(0),
+        };
+        var startupSubtitle = new Label
+        {
+            Text = "Launch AudioLeash when you sign in", AutoSize = true,
+            ForeColor = theme.MutedText, BackColor = theme.Surface, Margin = new Padding(0, 2, 0, 0),
+        };
+        var startupText = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false,
+            Anchor = AnchorStyles.Left, Margin = new Padding(0), BackColor = theme.Surface,
+        };
+        startupText.Controls.Add(startupTitle);
+        startupText.Controls.Add(startupSubtitle);
+
+        var startupCard = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1,
+            Padding = new Padding(14, 10, 14, 10), Margin = new Padding(0, 12, 0, 0),
+            BackColor = theme.Surface,
+        };
+        startupCard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        startupCard.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        startupCard.Controls.Add(startupText, 0, 0);
+        startupCard.Controls.Add(_startWithWindows, 1, 0);
+        startupCard.Paint += (_, e) =>
+        {
+            using var pen = new Pen(theme.Border);
+            e.Graphics.DrawRectangle(pen, 0, 0, startupCard.Width - 1, startupCard.Height - 1);
+        };
+        // Clicking anywhere on the row's text flips the switch, as in Windows Settings.
+        foreach (Control c in new Control[] { startupCard, startupText, startupTitle, startupSubtitle })
+        {
+            c.Cursor = Cursors.Hand;
+            c.Click += (_, _) => _startWithWindows.Focus();
+            c.MouseClick += (_, e) =>
+            {
+                if (e.Button != MouseButtons.Left) return;
+                _startWithWindows.Checked = !_startWithWindows.Checked;
+                StartWithWindowsToggled?.Invoke(this, EventArgs.Empty);
+            };
+        }
+
         var content = new TableLayoutPanel
         {
             Dock        = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount    = 3,
+            RowCount    = 4,
             Padding     = new Padding(16, 8, 16, 16),
             BackColor   = theme.Window,
         };
@@ -87,75 +145,13 @@ internal sealed class SettingsForm : Form
         content.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
         content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         content.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        content.Controls.Add(tabs,  0, 0);
-        content.Controls.Add(hint,  0, 1);
-        content.Controls.Add(pages, 0, 2);
-
-        // ── Footer: Start with Windows on the left, Save / Cancel on the right ──
-        _startWithWindows = new CheckBox
-        {
-            Text      = "Start with &Windows",
-            Checked   = startWithWindows,
-            AutoSize  = true,
-            Anchor    = AnchorStyles.Left,
-            FlatStyle = FlatStyle.Flat,
-            ForeColor = theme.Text,
-            BackColor = theme.Footer,
-        };
-        _startWithWindows.FlatAppearance.BorderColor      = theme.MutedText;
-        _startWithWindows.FlatAppearance.CheckedBackColor = theme.Footer;
-
-        var save   = ThemedControls.StyleButton(new Button
-        {
-            Text = "Save", DialogResult = DialogResult.OK, AutoSize = true,
-            MinimumSize = new Size(88, 30), Margin = new Padding(8, 0, 0, 0),
-        }, theme, primary: true);
-        var cancel = ThemedControls.StyleButton(new Button
-        {
-            Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true,
-            MinimumSize = new Size(88, 30), Margin = new Padding(8, 0, 0, 0),
-        }, theme);
-        AcceptButton = save;
-        CancelButton = cancel;
-
-        // The form is shown modeless, and a button's DialogResult only ends a modal loop:
-        // close explicitly. DialogResult (set by the button before Click) survives to FormClosed.
-        save.Click   += (_, _) => Close();
-        cancel.Click += (_, _) => Close();
-
-        var buttons = new FlowLayoutPanel
-        {
-            FlowDirection = FlowDirection.LeftToRight,
-            AutoSize      = true,
-            WrapContents  = false,
-            Anchor        = AnchorStyles.Right,
-            Margin        = new Padding(0),
-            BackColor     = theme.Footer,
-        };
-        buttons.Controls.Add(save);
-        buttons.Controls.Add(cancel);
-
-        var footer = new TableLayoutPanel
-        {
-            Dock        = DockStyle.Bottom,
-            AutoSize    = true,
-            ColumnCount = 2,
-            RowCount    = 1,
-            Padding     = new Padding(16, 14, 16, 14),
-            BackColor   = theme.Footer,
-        };
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        footer.Controls.Add(_startWithWindows, 0, 0);
-        footer.Controls.Add(buttons, 1, 0);
-        footer.Paint += (_, e) =>
-        {
-            using var line = new SolidBrush(theme.FooterBorder);
-            e.Graphics.FillRectangle(line, 0, 0, footer.Width, 1);
-        };
+        content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        content.Controls.Add(tabs,        0, 0);
+        content.Controls.Add(hint,        0, 1);
+        content.Controls.Add(pages,       0, 2);
+        content.Controls.Add(startupCard, 0, 3);
 
         Controls.Add(content);
-        Controls.Add(footer);
 
         ResumeLayout(performLayout: false);
         PerformLayout();
@@ -163,11 +159,29 @@ internal sealed class SettingsForm : Form
         ActiveControl = playbackList;
     }
 
-    /// <summary>Ctrl+Tab / Ctrl+Shift+Tab and Ctrl+PageDown / Ctrl+PageUp switch tabs, as in a TabControl.</summary>
+    /// <summary>Raised as soon as the user flips "Start with Windows".</summary>
+    public event EventHandler? StartWithWindowsToggled;
+
+    /// <summary>The switch's current position.</summary>
+    public bool StartWithWindows => _startWithWindows.Checked;
+
+    /// <summary>
+    /// Moves the switch without raising <see cref="StartWithWindowsToggled"/> — used to mirror a
+    /// change made from the tray menu, or to revert a toggle that couldn't be applied.
+    /// </summary>
+    public void SetStartWithWindows(bool enabled) => _startWithWindows.Checked = enabled;
+
+    /// <summary>
+    /// Esc closes the window (which applies the edits). Ctrl+Tab / Ctrl+Shift+Tab and
+    /// Ctrl+PageDown / Ctrl+PageUp switch tabs, as in a TabControl.
+    /// </summary>
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         switch (keyData)
         {
+            case Keys.Escape:
+                Close();
+                return true;
             case Keys.Control | Keys.Tab:
             case Keys.Control | Keys.PageDown:
                 _tabs.CycleSelection(forward: true);
@@ -180,15 +194,6 @@ internal sealed class SettingsForm : Form
                 return base.ProcessCmdKey(ref msg, keyData);
         }
     }
-
-    /// <summary>Whether the "Start with Windows" box is checked.</summary>
-    public bool StartWithWindows => _startWithWindows.Checked;
-
-    /// <summary>
-    /// Whether the user changed "Start with Windows" in this window. Save applies the option
-    /// only then, so a change made from the tray while the window was open isn't reverted.
-    /// </summary>
-    public bool StartWithWindowsChanged => _startWithWindows.Checked != _initialStartWithWindows;
 
     protected override void Dispose(bool disposing)
     {

@@ -51,18 +51,4 @@ public sealed class StartupServiceTests : IDisposable
         var ex = Record.Exception(() => svc.Disable());
         Assert.Null(ex);
     }
-
-    // ── ShouldApplyFromSettings ─────────────────────────────────────────
-
-    [Theory]
-    [InlineData(false, true,  false, false)] // untouched in the window: a tray change made meanwhile stands
-    [InlineData(false, false, true,  false)]
-    [InlineData(true,  true,  false, true)]  // changed in the window and differs: apply
-    [InlineData(true,  false, true,  true)]
-    [InlineData(true,  true,  true,  false)] // changed, but the tray already set the same value
-    public void ShouldApplyFromSettings_AppliesOnlyChangedValuesThatDiffer(
-        bool changedInWindow, bool desired, bool currentlyEnabled, bool expected)
-    {
-        Assert.Equal(expected, StartupService.ShouldApplyFromSettings(changedInWindow, desired, currentlyEnabled));
-    }
 }

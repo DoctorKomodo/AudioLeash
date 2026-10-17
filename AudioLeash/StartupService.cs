@@ -30,14 +30,6 @@ public sealed class StartupService
         }
     }
 
-    /// <summary>
-    /// Whether saving the settings window should change the startup registration: only when
-    /// the user changed the box in the window and it differs from the current state, so a
-    /// tray toggle made while the window was open isn't reverted.
-    /// </summary>
-    internal static bool ShouldApplyFromSettings(bool changedInWindow, bool desired, bool currentlyEnabled) =>
-        changedInWindow && desired != currentlyEnabled;
-
     /// <summary>Writes the Run value pointing to <paramref name="exePath"/>.</summary>
     public void Enable(string exePath)
     {

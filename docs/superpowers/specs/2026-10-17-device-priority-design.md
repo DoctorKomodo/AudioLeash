@@ -70,7 +70,7 @@ Behaviour is exactly as today. A manual pick is persisted and enforced indefinit
 
 - Existing `settings.json` files have no ranked lists, so after upgrading the user is in legacy mode with their saved device, unchanged.
 - In both modes the persisted selection means "the user's manual pick". In legacy mode it's enforced indefinitely, as today. In priority mode it's the override. The builder may reuse the existing `Selected*DeviceId`/`Name` fields for the override, or add new ones.
-- When a flow goes from no list to a list on Save, its existing pick is cleared, so priority takes over immediately (see "What Save does to the current state").
+- When a flow goes from no list to a list when the settings window is closed, its existing pick is cleared, so priority takes over immediately (see "What applying on close does to the current state").
 - The settings file must stay backward compatible in the same way `SettingsService` handles the legacy `SelectedDeviceId` field today. A missing priority field means an empty list.
 
 ## Settings window
@@ -86,10 +86,10 @@ Approved layout: **"one list with a not-ranked section"** (mockup B).
   - Reordering: drag and drop, including across the divider to rank or unrank a device, plus ▲/▼ buttons that move the selected row. ▲/▼ across the divider ranks or unranks the device as well.
   - A ranked device that isn't currently connected stays in its place and is shown as "not connected". That means the ranked list must persist each device's friendly name (and description) so it can be shown while the device is absent, the same way the app already persists `SelectedPlaybackDeviceName`.
   - Newly seen devices appear under "Not ranked".
-- **Footer band** (slightly darker, Windows 11 dialog style): "Start with Windows" on the left, **Save** (accent) and **Cancel** on the right. "Start with Windows" also stays in the tray menu, and Save only applies it if it was changed in the window.
+- **"Start with Windows" settings row** under the list (Windows 11 settings-card style) with an on/off switch. The switch applies immediately; it also stays in the tray menu, and a tray change while the window is open moves the switch to match. *(Revised: the footer with Save/Cancel was dropped in favour of applying on close.)*
 - The window draws its own tabs, list frame and buttons from a light/dark palette, so it matches the Windows theme.
-- **Save / Cancel.** Nothing applies until Save. Cancel or closing the window discards the changes. When you click Save, AudioLeash re-evaluates the target for each flow immediately.
-- **What Save does to the current state** (per flow; *these are design calls, not the user's decisions*):
+- **No Save / Cancel.** List edits apply when the window is closed (✕, Esc, Alt+F4), so rearranging never switches audio mid-edit; an untouched list is not re-applied. On close AudioLeash re-evaluates the target for each changed flow. If the app is exiting with the window open (tray Exit, logoff, installer), edits are persisted but nothing switches. There is no discard; undo a move by moving it back.
+- **What applying on close does to the current state** (per flow; *these are design calls, not the user's decisions*):
   - **No list → list (legacy → priority):** the legacy pick is dropped, and the target becomes the top connected ranked device, the same as at startup. It does not turn into an override.
   - **Override in force, list edited:** the override stays in force. Only "Return to priority order" or the device disconnecting ends it. If the overridden device was unranked and has now been ranked, or the reverse, that changes nothing.
   - **List → empty (priority → legacy):** the device that is the Windows default at that moment becomes the persisted legacy pick and is enforced as it is today. An old legacy pick is never brought back.

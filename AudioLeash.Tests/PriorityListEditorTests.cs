@@ -248,4 +248,47 @@ public class PriorityListEditorTests
         Assert.Equal(["a", "y", "b", "c"], Ids(editor.Ranked));
         Assert.Equal(["x"], Ids(editor.Unranked));
     }
+
+    // ── HasChanges ──────────────────────────────────────────────────────
+
+    private static PriorityListEditor TwoRanked() => new(
+        [new RankedDevice("a", "A"), new RankedDevice("b", "B")],
+        [Row("a", "A"), Row("b", "B"), Row("c", "C")]);
+
+    [Fact]
+    public void HasChanges_Untouched_IsFalse() => Assert.False(TwoRanked().HasChanges);
+
+    [Fact]
+    public void HasChanges_AfterReorder_IsTrue()
+    {
+        var editor = TwoRanked();
+        editor.MoveUp("b");
+        Assert.True(editor.HasChanges);
+    }
+
+    [Fact]
+    public void HasChanges_AfterRanking_IsTrue()
+    {
+        var editor = TwoRanked();
+        editor.MoveUp("c");
+        Assert.True(editor.HasChanges);
+    }
+
+    [Fact]
+    public void HasChanges_MovedAndMovedBack_IsFalse()
+    {
+        var editor = TwoRanked();
+        editor.MoveUp("b");
+        editor.MoveUp("a");
+        Assert.False(editor.HasChanges);
+    }
+
+    [Fact]
+    public void HasChanges_DuplicateIdsInPersistedList_UntouchedIsFalse()
+    {
+        // The editor collapses duplicates; that cleanup alone isn't a user change.
+        var editor = new PriorityListEditor(
+            [new RankedDevice("a", "A"), new RankedDevice("a", "A again")], [Row("a", "A")]);
+        Assert.False(editor.HasChanges);
+    }
 }

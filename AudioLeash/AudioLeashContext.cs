@@ -618,11 +618,20 @@ public sealed class AudioLeashContext : ApplicationContext
         }
 
         var form = new SettingsForm(playback, capture, _startupService.IsEnabled);
-        form.FormClosed += (_, _) =>
+
+        // The switch applies at once; it doesn't touch audio, so there's nothing to defer.
+        form.StartWithWindowsToggled += (_, _) => SetStartWithWindows(form.StartWithWindows);
+
+        // List edits apply when the window closes, so rearranging never switches audio mid-edit.
+        // If the app itself is exiting (tray Exit, logoff, installer), only persist them.
+        form.FormClosed += (_, e) =>
         {
             _settingsForm = null;
-            if (form.DialogResult == DialogResult.OK)
-                ApplySettings(form, playback, capture);
+            bool exiting = _shuttingDown
+                        || e.CloseReason is CloseReason.ApplicationExitCall
+                                         or CloseReason.WindowsShutDown
+                                         or CloseReason.TaskManagerClosing;
+            ApplySettings(playback, capture, exiting);
             form.Dispose();
         };
         _settingsForm = form;
@@ -661,29 +670,15 @@ public sealed class AudioLeashContext : ApplicationContext
     }
 
     /// <summary>
-    /// Applies a saved settings window: each flow's new ranked list (switching between
-    /// legacy and priority mode as needed), then the startup option.
+    /// Applies the closed settings window's ranked lists, switching between legacy and
+    /// priority mode as needed. When <paramref name="exiting"/>, the lists are only persisted.
     /// </summary>
-    private void ApplySettings(SettingsForm form, PriorityListEditor playback, PriorityListEditor capture)
+    private void ApplySettings(PriorityListEditor playback, PriorityListEditor capture, bool exiting)
     {
-        ApplyFlowSettings(DataFlow.Render, playback.ToRankedList());
-        ApplyFlowSettings(DataFlow.Capture, capture.ToRankedList());
-
-        if (StartupService.ShouldApplyFromSettings(
-                form.StartWithWindowsChanged, form.StartWithWindows, _startupService.IsEnabled))
-        {
-            try
-            {
-                if (form.StartWithWindows)
-                    _startupService.Enable(Environment.ProcessPath ?? Application.ExecutablePath);
-                else
-                    _startupService.Disable();
-            }
-            catch (Exception ex)
-            {
-                ShowError($"Could not update startup setting:\n{ex.Message}");
-            }
-        }
+        // Untouched lists are skipped, so opening and closing the window changes nothing.
+        if (playback.HasChanges) ApplyFlowSettings(DataFlow.Render, playback.ToRankedList(), exiting);
+        if (capture.HasChanges)  ApplyFlowSettings(DataFlow.Capture, capture.ToRankedList(), exiting);
+        if (exiting) return;
 
         UpdateTrayTooltip();
         RefreshDeviceList();
@@ -693,11 +688,13 @@ public sealed class AudioLeashContext : ApplicationContext
     /// Applies one flow's saved ranked list. The persisted pick follows
     /// <see cref="PriorityState.PlanPersistedPick"/>: entering priority mode drops the legacy
     /// pick, staying keeps the override, and leaving pins the current default as the legacy pick.
+    /// When <paramref name="exiting"/>, the list and pick are persisted but nothing switches.
     /// </summary>
-    private void ApplyFlowSettings(DataFlow flow, IReadOnlyList<RankedDevice> newList)
+    private void ApplyFlowSettings(DataFlow flow, IReadOnlyList<RankedDevice> newList, bool exiting)
     {
         var priority  = PriorityFor(flow);
         var selection = SelectionFor(flow);
+
         bool wasPriority = priority.IsPriorityMode;
         bool isPriority  = newList.Count > 0;
 
@@ -727,6 +724,7 @@ public sealed class AudioLeashContext : ApplicationContext
                 _settingsService.SaveCaptureFlow(newList, pick, pickName);
                 _savedCaptureDeviceName = pickName;
             }
+            if (exiting) return;
 
             if (isPriority)
             {
@@ -809,20 +807,28 @@ public sealed class AudioLeashContext : ApplicationContext
             _             => "Auto-restore disabled. Select a device to re-enable.",
         };
 
-    private void StartupItem_Click(object? sender, EventArgs e)
+    private void StartupItem_Click(object? sender, EventArgs e) =>
+        SetStartWithWindows(!_startupService.IsEnabled);
+
+    /// <summary>
+    /// Turns launch-at-login on or off (tray menu or settings window) and keeps an open
+    /// settings window's switch in step with the actual state, including after a failure.
+    /// </summary>
+    private void SetStartWithWindows(bool enable)
     {
         try
         {
-            if (_startupService.IsEnabled)
-                _startupService.Disable();
-            else
+            if (enable)
                 _startupService.Enable(Environment.ProcessPath ?? Application.ExecutablePath);
+            else
+                _startupService.Disable();
         }
         catch (Exception ex)
         {
             ShowError($"Could not update startup setting:\n{ex.Message}");
         }
 
+        _settingsForm?.SetStartWithWindows(_startupService.IsEnabled);
         RefreshDeviceList();
     }
 
