@@ -47,13 +47,13 @@ python tools/generate-icon.py           # rewrites AudioLeash/Resources/icon.ico
 python tools/generate-icon.py --preview # also dumps PNGs to build/icon-preview/
 ```
 
-The script renders nine frames (16, 20, 24, 32, 40, 48, 64, 128, 256); 20, 24 and 40 are the tray icon at 125%, 150% and 250% scaling, since the app is per-monitor DPI aware. Frames up to 32px are drawn from **simplified geometry** — a thicker carabiner, no gate detail, coordinates snapped to whole device pixels — rather than downscaled from a large master. A hairline ring shrunk to 16px dissolves into grey mush, which is exactly what the previous icon did.
+The script renders nine frames (16, 20, 24, 32, 40, 48, 64, 128, 256); 20, 24 and 40 are the tray icon at 125%, 150% and 250% scaling, since the app is per-monitor DPI aware. Frames up to 32px are drawn from **simplified geometry** — a square 1px-wall hook instead of the curved stroked one, coordinates snapped to whole device pixels — rather than downscaled from a large master. A curved hairline hook shrunk to 16px dissolves into grey mush.
 
-The ring keeps its inner cutout even at 16px: a solid pill at that size is indistinguishable from a vertical bar. What carries legibility in the tray is the 1px gap between the speaker and the ring, which keeps them as two separate masses.
+The hook keeps its inner cutout and open left side even at 16px: a solid block there is indistinguishable from a vertical bar. What carries legibility in the tray is the 1px gaps between the speaker, the leash bar and the hook, which keep them as three separate masses. The hook's corners are square at small sizes because rounded 1px walls break into diagonal-only fragments.
 
-`IconAssetTests` enforces that. It decodes the shipped 16px frame and asserts it resolves into **exactly two bright masses** — the speaker and the ring — with at least 20 near-white pixels. Regenerating with `SIMPLIFIED_UP_TO = 0`, so every frame comes from the full hairline geometry, produces five fragmented masses and eight near-white pixels, and the tests fail. Do not relax those bounds to make a red test green; they mean the artwork regressed.
+`IconAssetTests` enforces that. It decodes the shipped 16px frame and asserts it resolves into **exactly three bright masses** — the speaker, the leash bar and the hook — with at least 20 near-white pixels. Regenerating with `SIMPLIFIED_UP_TO = 0`, so every frame comes from the full hairline geometry, produces fragmented masses and few near-white pixels, and the tests fail. Do not relax those bounds to make a red test green; they mean the artwork regressed.
 
-The tile geometry (corner radius 15.3% of width, vertical gradient, white glyph at ~54% width) is shared with the AudioStreamer icon so the two apps read as a family. AudioLeash's gradient is `#22C3DE` → `#0E7C96`.
+The tile geometry (corner radius 15.3% of width, vertical gradient, white glyph spanning ~72% of the width) is shared with the AudioStreamer icon so the two apps read as a family. AudioLeash's gradient is `#22C3DE` → `#0E7C96`.
 
 The generator is deterministic: re-running it on an unchanged script reproduces the committed `.ico` byte-for-byte with the same Pillow version. That has only been verified within a single Pillow version — a Pillow upgrade could change its PNG encoder's output bytes without changing the rendered pixels.
 
