@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Reflection;
@@ -21,12 +22,15 @@ public sealed class AudioLeashContext : ApplicationContext
     private readonly PolicyConfigClient      _policyConfig;
     private readonly DeviceSelectionState    _selection;
     private readonly DeviceSelectionState    _captureSelection;
+    private readonly PriorityState           _playbackPriority;
+    private readonly PriorityState           _capturePriority;
     private readonly AudioNotificationClient _notificationClient;
     private readonly SettingsService         _settingsService;
     private readonly StartupService          _startupService;
     private readonly Font                    _sectionHeaderFont;
     private readonly System.Windows.Forms.Timer _renderDebounce;
     private readonly System.Windows.Forms.Timer _captureDebounce;
+    private readonly System.Windows.Forms.Timer? _startupGraceTimer;
     private string?                          _savedPlaybackDeviceName;
     private string?                          _savedCaptureDeviceName;
 
@@ -37,12 +41,21 @@ public sealed class AudioLeashContext : ApplicationContext
     /// </summary>
     private const int DebounceMs = 1000;
 
+    /// <summary>
+    /// How long a persisted priority-mode override may be absent at startup before it is
+    /// treated as disconnected. Audio endpoints can enumerate late after boot, so a missing
+    /// device at startup isn't an immediate disconnect.
+    /// </summary>
+    private const int StartupGraceMs = 5000;
+
     public AudioLeashContext()
     {
         _enumerator   = new MMDeviceEnumerator();
         _policyConfig = new PolicyConfigClient();
         _selection        = new DeviceSelectionState();
         _captureSelection = new DeviceSelectionState();
+        _playbackPriority = new PriorityState();
+        _capturePriority  = new PriorityState();
         _contextMenu      = new ContextMenuStrip();
         _sectionHeaderFont = new Font(_contextMenu.Font, FontStyle.Bold);
         ApplyTheme();
@@ -95,10 +108,30 @@ public sealed class AudioLeashContext : ApplicationContext
         _savedCaptureDeviceName  = _settingsService.LoadSelectedCaptureDeviceName();
         bool isFirstRun = savedPlaybackId is null && !_settingsService.HasSettingsFile;
 
-        bool playbackRestored = TryRestoreSavedDevice(DataFlow.Render, _selection, savedPlaybackId);
-        bool captureRestored  = TryRestoreSavedDevice(DataFlow.Capture, _captureSelection, savedCaptureId);
-        bool playbackUnavailable = savedPlaybackId is not null && !playbackRestored;
-        bool captureUnavailable  = savedCaptureId is not null && !captureRestored;
+        // Each flow starts in priority mode (ranked list configured) or legacy mode.
+        // Only legacy flows can report "Saved Device Unavailable"; a priority flow's
+        // absent override is handled by the startup grace period instead.
+        bool playbackUnavailable = StartFlow(
+            DataFlow.Render, _settingsService.LoadPlaybackPriority(), savedPlaybackId, out bool playbackGrace);
+        bool captureUnavailable = StartFlow(
+            DataFlow.Capture, _settingsService.LoadCapturePriority(), savedCaptureId, out bool captureGrace);
+
+        if (playbackGrace || captureGrace)
+        {
+            // One-shot: once the grace period ends, an override that still hasn't
+            // appeared is treated as disconnected by the settled reconcile.
+            var graceTimer = new System.Windows.Forms.Timer { Interval = StartupGraceMs };
+            graceTimer.Tick += (_, _) =>
+            {
+                graceTimer.Stop();
+                _playbackPriority.EndStartupGrace();
+                _capturePriority.EndStartupGrace();
+                ReconcileDeviceState(DataFlow.Render);
+                ReconcileDeviceState(DataFlow.Capture);
+            };
+            _startupGraceTimer = graceTimer;
+            graceTimer.Start();
+        }
 
         UpdateTrayTooltip();
 
@@ -127,6 +160,43 @@ public sealed class AudioLeashContext : ApplicationContext
         }
 
         RefreshDeviceList();
+    }
+
+    /// <summary>
+    /// Loads <paramref name="ranked"/> into the flow's <see cref="PriorityState"/> and starts
+    /// the flow in the matching mode. Priority mode: a saved pick becomes the override (under
+    /// a startup grace period), the target is committed from the connected devices, and the
+    /// default is switched to it silently. Legacy mode: the saved pick is restored as today.
+    /// </summary>
+    /// <param name="beganGrace">True when this flow started a startup grace period.</param>
+    /// <returns>True when a legacy saved device is currently unavailable.</returns>
+    private bool StartFlow(
+        DataFlow flow, IReadOnlyList<RankedDevice> ranked, string? savedId, out bool beganGrace)
+    {
+        beganGrace = false;
+        var priority = PriorityFor(flow);
+        priority.SetRanked(ranked);
+
+        if (!priority.IsPriorityMode)
+        {
+            bool restored = TryRestoreSavedDevice(flow, SelectionFor(flow), savedId);
+            return savedId is not null && !restored;
+        }
+
+        if (savedId is not null)
+        {
+            priority.StartOverride(savedId);
+            priority.BeginStartupGrace();
+            beganGrace = true;
+        }
+        priority.Initialize(GetActiveIds(flow));
+
+        if (priority.TargetId is { } targetId)
+        {
+            try { SetDefaultIfNeeded(flow, priority, targetId); }
+            catch (Exception) { /* transient COM failure; the next default change or reconcile re-asserts */ }
+        }
+        return false;
     }
 
     /// <summary>
@@ -367,22 +437,25 @@ public sealed class AudioLeashContext : ApplicationContext
     /// </summary>
     private void OnDefaultDeviceChanged(DataFlow flow, string newDefaultId)
     {
-        var selection = flow == DataFlow.Render ? _selection : _captureSelection;
+        var selection = SelectionFor(flow);
+        var priority  = PriorityFor(flow);
+        bool isPriorityMode = priority.IsPriorityMode;
 
-        bool isSelectedAvailable = false;
-        if (selection.SelectedDeviceId is not null)
-        {
-            var activeDevices = _enumerator
-                .EnumerateAudioEndPoints(flow, DeviceState.Active)
-                .ToList();
-            isSelectedAvailable = activeDevices.Any(d => d.ID == selection.SelectedDeviceId);
-            foreach (var d in activeDevices) d.Dispose();
-        }
-
-        var decision = selection.EvaluateDefaultChange(newDefaultId, isSelectedAvailable);
+        // Both evaluators snapshot their enforced device once, so the availability check
+        // and decision.RestoreId always agree (no re-read of a field the UI thread may clear).
+        var decision = isPriorityMode
+            ? priority.EvaluateDefaultChange(newDefaultId, id => IsDeviceActive(flow, id))
+            : selection.EvaluateDefaultChange(newDefaultId, id => IsDeviceActive(flow, id));
         string flowLabel = flow == DataFlow.Render ? "Audio Device" : "Recording Device";
 
-        switch (decision)
+        // The loop-prevention flag lives on whichever state object enforces this flow.
+        void SetInternalChange(bool value)
+        {
+            if (isPriorityMode) priority.IsInternalChange = value;
+            else                selection.IsInternalChange = value;
+        }
+
+        switch (decision.Decision)
         {
             case RestoreDecision.NoAction:
                 return;
@@ -397,12 +470,11 @@ public sealed class AudioLeashContext : ApplicationContext
                 ArmDebounce(flow);
                 break;
 
-            case RestoreDecision.Restore:
+            case RestoreDecision.Restore when decision.RestoreId is { } restoreId:
                 // Set the flag on the audio thread BEFORE dispatching to the UI thread.
                 // This prevents a second OnDefaultDeviceChanged from triggering another
                 // restore attempt during the roundtrip to the UI thread.
-                selection.IsInternalChange = true;
-                string restoreId = selection.SelectedDeviceId!;
+                SetInternalChange(true);
 
                 // CPolicyConfigClient is an STA COM object with no registered proxy/stub.
                 // Calling it from the audio COM thread (a different apartment) causes an
@@ -424,7 +496,9 @@ public sealed class AudioLeashContext : ApplicationContext
                             // so if a debounce tick is pending it will now evaluate
                             // (available -> available) = ReassertSilently and won't fire a
                             // duplicate "Reconnected" balloon on top of this "Restored" one.
-                            selection.SetDeviceAvailability(true);
+                            // Legacy-only: PriorityState tracks its target, not availability.
+                            if (!isPriorityMode)
+                                selection.SetDeviceAvailability(true);
 
                             var restoreDevices = _enumerator
                                 .EnumerateAudioEndPoints(flow, DeviceState.Active)
@@ -452,13 +526,13 @@ public sealed class AudioLeashContext : ApplicationContext
                         }
                         finally
                         {
-                            selection.IsInternalChange = false;
+                            SetInternalChange(false);
                         }
                     });
                 }
                 catch
                 {
-                    selection.IsInternalChange = false;
+                    SetInternalChange(false);
                 }
                 break;
         }
@@ -478,8 +552,20 @@ public sealed class AudioLeashContext : ApplicationContext
     /// </remarks>
     private void OnDeviceStateChanged(string deviceId, DeviceState newState)
     {
-        if (_selection.SelectedDeviceId == deviceId)        ArmDebounce(DataFlow.Render);
-        if (_captureSelection.SelectedDeviceId == deviceId) ArmDebounce(DataFlow.Capture);
+        if (_selection.SelectedDeviceId == deviceId || IsPriorityRelevant(DataFlow.Render, deviceId))
+            ArmDebounce(DataFlow.Render);
+        if (_captureSelection.SelectedDeviceId == deviceId || IsPriorityRelevant(DataFlow.Capture, deviceId))
+            ArmDebounce(DataFlow.Capture);
+    }
+
+    /// <summary>
+    /// True when <paramref name="flow"/> is in priority mode and the device is ranked
+    /// or is the current override, so its connect/disconnect must be reconciled.
+    /// </summary>
+    private bool IsPriorityRelevant(DataFlow flow, string deviceId)
+    {
+        var priority = PriorityFor(flow);
+        return priority.IsPriorityMode && priority.IsRelevant(deviceId);
     }
 
     /// <summary>
@@ -513,7 +599,14 @@ public sealed class AudioLeashContext : ApplicationContext
 
     private void ReconcileDeviceStateCore(DataFlow flow)
     {
-        var selection = flow == DataFlow.Render ? _selection : _captureSelection;
+        var priority = PriorityFor(flow);
+        if (priority.IsPriorityMode)
+        {
+            ApplyPriorityDecision(flow, priority.EvaluateSettled(GetActiveIds(flow)), notify: true);
+            return;
+        }
+
+        var selection = SelectionFor(flow);
         if (selection.SelectedDeviceId is null) return;
 
         string selectedId = selection.SelectedDeviceId;
@@ -597,6 +690,127 @@ public sealed class AudioLeashContext : ApplicationContext
                 tipIcon:  ToolTipIcon.Error);
         }
     }
+
+    /// <summary>
+    /// Acts on a priority-mode decision on the UI thread: persists an ended override,
+    /// switches the default to <see cref="PriorityDecision.TargetId"/> when Windows isn't
+    /// already on it, and optionally shows the balloon for the outcome.
+    /// </summary>
+    private void ApplyPriorityDecision(DataFlow flow, PriorityDecision decision, bool notify)
+    {
+        var priority = PriorityFor(flow);
+        string flowLabel = flow == DataFlow.Render ? "Audio Device" : "Recording Device";
+
+        bool overrideEnded = decision.Outcome == PriorityOutcome.OverrideEnded;
+
+        // Resolve the previous device's name before the saved name is cleared below. An
+        // ended override may be unranked, so its saved pick name is the last fallback.
+        string? savedName = flow == DataFlow.Render ? _savedPlaybackDeviceName : _savedCaptureDeviceName;
+        string prevName = decision.PreviousTargetId is null
+            ? "device"
+            : ResolvePriorityName(priority, decision.PreviousTargetId, overrideEnded ? savedName : null);
+
+        if (overrideEnded)
+        {
+            // The override is over; a restart must not bring it back.
+            if (flow == DataFlow.Render)
+            {
+                _savedPlaybackDeviceName = null;
+                _settingsService.SaveSelectedPlaybackDevice(null, null);
+            }
+            else
+            {
+                _savedCaptureDeviceName = null;
+                _settingsService.SaveSelectedCaptureDevice(null, null);
+            }
+        }
+
+        try
+        {
+            if (decision.TargetId is not null)
+                SetDefaultIfNeeded(flow, priority, decision.TargetId);
+
+            if (notify)
+                ShowPriorityBalloon(priority, decision, flowLabel, prevName);
+        }
+        catch (Exception ex)
+        {
+            _trayIcon.ShowBalloonTip(
+                timeout:  3000,
+                tipTitle: "Restore Failed",
+                tipText:  $"Could not restore {flowLabel.ToLower()}:\n{ex.Message}",
+                tipIcon:  ToolTipIcon.Error);
+        }
+
+        UpdateTrayTooltip();
+        RefreshDeviceList();
+    }
+
+    /// <summary>Shows the balloon for a priority outcome; silent outcomes show nothing.</summary>
+    private void ShowPriorityBalloon(
+        PriorityState priority, PriorityDecision decision, string flowLabel, string prevName)
+    {
+        string? name = decision.TargetId is null
+            ? null
+            : ResolvePriorityName(priority, decision.TargetId);
+
+        (string title, string text, ToolTipIcon icon)? balloon = decision.Outcome switch
+        {
+            PriorityOutcome.SwitchedUp =>
+                ($"{flowLabel} Switched", $"Switched to {name} (higher priority)", ToolTipIcon.Info),
+            PriorityOutcome.FellBack =>
+                ($"{flowLabel} Disconnected", $"{prevName} disconnected. Switched to {name}", ToolTipIcon.Warning),
+            PriorityOutcome.OverrideEnded when name is not null =>
+                ($"{flowLabel} Disconnected", $"{prevName} disconnected. Back to priority order: {name}", ToolTipIcon.Warning),
+            PriorityOutcome.OverrideEnded or PriorityOutcome.NoneConnected =>
+                ($"{flowLabel} Disconnected", $"{prevName} disconnected. No ranked devices are connected.", ToolTipIcon.Warning),
+            _ => null, // ReassertSilently / None
+        };
+
+        if (balloon is var (title, text, icon))
+        {
+            _trayIcon.ShowBalloonTip(timeout: 3000, tipTitle: title, tipText: text, tipIcon: icon);
+        }
+    }
+
+    /// <summary>
+    /// Display name for a priority-mode device: the live name, then the cached ranked-list
+    /// name, then <paramref name="fallbackName"/>, then <c>"device"</c>.
+    /// </summary>
+    private string ResolvePriorityName(PriorityState priority, string deviceId, string? fallbackName = null) =>
+        GetDeviceName(deviceId)
+        ?? priority.Ranked.FirstOrDefault(r => r.Id == deviceId)?.Name
+        ?? fallbackName
+        ?? "device";
+
+    /// <summary>
+    /// Switches the default for <paramref name="flow"/> to <paramref name="targetId"/> only
+    /// when Windows isn't already on it, under <see cref="PriorityState.IsInternalChange"/>
+    /// so the resulting notification isn't treated as an external change. UI thread only.
+    /// </summary>
+    private void SetDefaultIfNeeded(DataFlow flow, PriorityState state, string targetId)
+    {
+        if (GetCurrentDefaultId(flow) == targetId) return;
+
+        state.IsInternalChange = true;
+        try { _policyConfig.SetDefaultEndpoint(targetId); }
+        finally { state.IsInternalChange = false; }
+    }
+
+    /// <summary>The IDs of the flow's currently active endpoints. Disposes every enumerated device.</summary>
+    private HashSet<string> GetActiveIds(DataFlow flow)
+    {
+        var active = _enumerator.EnumerateAudioEndPoints(flow, DeviceState.Active).ToList();
+        var ids = new HashSet<string>(active.Select(d => d.ID));
+        foreach (var d in active) d.Dispose();
+        return ids;
+    }
+
+    private PriorityState PriorityFor(DataFlow flow) =>
+        flow == DataFlow.Render ? _playbackPriority : _capturePriority;
+
+    private DeviceSelectionState SelectionFor(DataFlow flow) =>
+        flow == DataFlow.Render ? _selection : _captureSelection;
 
     /// <summary>Returns whether <paramref name="deviceId"/> is currently an active endpoint for the flow.</summary>
     private bool IsDeviceActive(DataFlow flow, string deviceId)
@@ -707,6 +921,8 @@ public sealed class AudioLeashContext : ApplicationContext
             _captureDebounce.Stop();
             _renderDebounce.Dispose();
             _captureDebounce.Dispose();
+            _startupGraceTimer?.Stop();
+            _startupGraceTimer?.Dispose();
 
             foreach (ToolStripItem item in _contextMenu.Items)
             {
