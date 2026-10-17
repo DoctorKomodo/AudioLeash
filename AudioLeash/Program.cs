@@ -27,6 +27,9 @@ static class Program
         if (!acquired)
             return; // Another instance is already running — exit silently.
 
+        // Per-monitor DPI awareness: without it Windows bitmap-stretches the tray menu (blurry)
+        // on any display above 100% scaling. Must be set before the first window is created.
+        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 

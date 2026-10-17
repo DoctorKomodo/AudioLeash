@@ -47,7 +47,7 @@ python tools/generate-icon.py           # rewrites AudioLeash/Resources/icon.ico
 python tools/generate-icon.py --preview # also dumps PNGs to build/icon-preview/
 ```
 
-The script renders six frames (16, 32, 48, 64, 128, 256). The 16px and 32px frames are drawn from **simplified geometry** — a thicker carabiner, no gate detail, coordinates snapped to whole device pixels — rather than downscaled from a large master. A hairline ring shrunk to 16px dissolves into grey mush, which is exactly what the previous icon did.
+The script renders nine frames (16, 20, 24, 32, 40, 48, 64, 128, 256); 20, 24 and 40 are the tray icon at 125%, 150% and 250% scaling, since the app is per-monitor DPI aware. Frames up to 32px are drawn from **simplified geometry** — a thicker carabiner, no gate detail, coordinates snapped to whole device pixels — rather than downscaled from a large master. A hairline ring shrunk to 16px dissolves into grey mush, which is exactly what the previous icon did.
 
 The ring keeps its inner cutout even at 16px: a solid pill at that size is indistinguishable from a vertical bar. What carries legibility in the tray is the 1px gap between the speaker and the ring, which keeps them as two separate masses.
 

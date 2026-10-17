@@ -8,6 +8,9 @@ public class TrayIconLoaderTests
 {
     [Theory]
     [InlineData(16)]
+    [InlineData(20)]
+    [InlineData(24)]
+    [InlineData(40)]
     [InlineData(32)]
     [InlineData(48)]
     public void Load_SelectsTheFrameMatchingTheRequestedSize(int px)
