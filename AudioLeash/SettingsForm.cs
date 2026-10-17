@@ -16,13 +16,16 @@ internal sealed class SettingsForm : Form
     private const string RecordingHint = "AudioLeash keeps the highest-ranked connected recording device as the default.";
     private const string RankHint      = " Drag devices, or use ▲/▼, to rank them.";
 
+    private readonly UnderlineTabStrip _tabs;
     private readonly CheckBox _startWithWindows;
     private readonly bool     _initialStartWithWindows;
     private readonly Icon     _icon;
 
-    public SettingsForm(PriorityListEditor playback, PriorityListEditor capture, bool startWithWindows)
+    /// <param name="theme">Palette to draw with; defaults to the current Windows app theme.</param>
+    public SettingsForm(
+        PriorityListEditor playback, PriorityListEditor capture, bool startWithWindows, SettingsTheme? theme = null)
     {
-        var theme = SettingsTheme.Current;
+        theme ??= SettingsTheme.Current;
         _initialStartWithWindows = startWithWindows;
 
         SuspendLayout();
@@ -42,7 +45,10 @@ internal sealed class SettingsForm : Form
         Icon                = _icon;
 
         // ── Content: tabs, hint, the selected flow's list ──────────────
-        var tabs = new UnderlineTabStrip(theme) { Dock = DockStyle.Fill, Margin = new Padding(0) };
+        var tabs = _tabs = new UnderlineTabStrip(theme)
+        {
+            Dock = DockStyle.Fill, Margin = new Padding(0), AccessibleName = "Device type",
+        };
         tabs.AddTab("Playback");
         tabs.AddTab("Recording");
 
@@ -52,7 +58,7 @@ internal sealed class SettingsForm : Form
             ForeColor = theme.MutedText,
             AutoSize  = true,
             Dock      = DockStyle.Fill,
-            Margin    = new Padding(0, 10, 0, 10),
+            Margin    = new Padding(0, 6, 0, 8),
         };
 
         var playbackList = new PriorityListControl(playback, theme) { Dock = DockStyle.Fill };
@@ -88,7 +94,7 @@ internal sealed class SettingsForm : Form
         // ── Footer: Start with Windows on the left, Save / Cancel on the right ──
         _startWithWindows = new CheckBox
         {
-            Text      = "Start with Windows",
+            Text      = "Start with &Windows",
             Checked   = startWithWindows,
             AutoSize  = true,
             Anchor    = AnchorStyles.Left,
@@ -155,6 +161,24 @@ internal sealed class SettingsForm : Form
         PerformLayout();
 
         ActiveControl = playbackList;
+    }
+
+    /// <summary>Ctrl+Tab / Ctrl+Shift+Tab and Ctrl+PageDown / Ctrl+PageUp switch tabs, as in a TabControl.</summary>
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        switch (keyData)
+        {
+            case Keys.Control | Keys.Tab:
+            case Keys.Control | Keys.PageDown:
+                _tabs.CycleSelection(forward: true);
+                return true;
+            case Keys.Control | Keys.Shift | Keys.Tab:
+            case Keys.Control | Keys.PageUp:
+                _tabs.CycleSelection(forward: false);
+                return true;
+            default:
+                return base.ProcessCmdKey(ref msg, keyData);
+        }
     }
 
     /// <summary>Whether the "Start with Windows" box is checked.</summary>

@@ -658,8 +658,8 @@ public sealed class AudioLeashContext : ApplicationContext
         ApplyFlowSettings(DataFlow.Render, playback.ToRankedList());
         ApplyFlowSettings(DataFlow.Capture, capture.ToRankedList());
 
-        // Only when changed in the window: a tray toggle made while it was open must stand.
-        if (form.StartWithWindowsChanged && form.StartWithWindows != _startupService.IsEnabled)
+        if (StartupService.ShouldApplyFromSettings(
+                form.StartWithWindowsChanged, form.StartWithWindows, _startupService.IsEnabled))
         {
             try
             {
@@ -777,21 +777,26 @@ public sealed class AudioLeashContext : ApplicationContext
         }
         UpdateTrayTooltip();
 
-        // In a mixed setup, say which flow was released and that the other keeps enforcing.
-        string tipText = (playbackLegacy, captureLegacy) switch
+        _trayIcon.ShowBalloonTip(
+            timeout:  2500,
+            tipTitle: "Selection Cleared",
+            tipText:  ClearSelectionMessage(playbackLegacy, captureLegacy),
+            tipIcon:  ToolTipIcon.Info);
+
+        RefreshDeviceList();
+    }
+
+    /// <summary>
+    /// The "Selection Cleared" balloon text. Clear Selection only releases legacy flows, so in
+    /// a mixed setup it names the released flow and says the other still follows its priority order.
+    /// </summary>
+    internal static string ClearSelectionMessage(bool playbackLegacy, bool captureLegacy) =>
+        (playbackLegacy, captureLegacy) switch
         {
             (true, false) => "Playback auto-restore disabled. Recording still follows your priority order.",
             (false, true) => "Recording auto-restore disabled. Playback still follows your priority order.",
             _             => "Auto-restore disabled. Select a device to re-enable.",
         };
-        _trayIcon.ShowBalloonTip(
-            timeout:  2500,
-            tipTitle: "Selection Cleared",
-            tipText:  tipText,
-            tipIcon:  ToolTipIcon.Info);
-
-        RefreshDeviceList();
-    }
 
     private void StartupItem_Click(object? sender, EventArgs e)
     {
