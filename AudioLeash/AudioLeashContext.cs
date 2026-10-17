@@ -490,13 +490,35 @@ public sealed class AudioLeashContext : ApplicationContext
     /// </summary>
     private void PickPriorityDevice(DataFlow flow, PriorityState priority, string deviceId, string deviceName)
     {
+        string? previousOverride = priority.OverrideId;
         try
         {
             // Commit the override first so the default-change notification caused by the switch
             // below already matches the target; SetDefaultIfNeeded also raises IsInternalChange.
             priority.StartOverride(deviceId);
             SetDefaultIfNeeded(flow, priority, deviceId);
+        }
+        catch (Exception ex)
+        {
+            // The switch failed: undo the in-memory commit so nothing enforces a device the
+            // user was told could not be set. Nothing was persisted.
+            try
+            {
+                if (previousOverride is null) priority.ReturnToPriority(GetActiveIds(flow));
+                else                          priority.StartOverride(previousOverride);
+            }
+            catch (Exception) { /* enumeration failed; the next reconcile re-derives the target */ }
 
+            UpdateTrayTooltip();
+            RefreshDeviceList();
+            // The device did change; only persisting/refreshing failed.
+            ShowError($"Device switched, but the choice could not be saved:
+{ex.Message}");
+            return;
+        }
+
+        try
+        {
             if (flow == DataFlow.Render)
             {
                 _savedPlaybackDeviceName = deviceName;
