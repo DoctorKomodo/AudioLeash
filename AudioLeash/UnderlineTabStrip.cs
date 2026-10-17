@@ -51,6 +51,7 @@ internal sealed class UnderlineTabStrip : Control
             if (value < 0 || value >= _titles.Count || value == _selectedIndex) return;
             _selectedIndex = value;
             Invalidate();
+            // 0-based on purpose: WinForms adds 1 to form the MSAA child ID.
             AccessibilityNotifyClients(AccessibleEvents.Selection, value);
             if (Focused) AccessibilityNotifyClients(AccessibleEvents.Focus, value);
             SelectedIndexChanged?.Invoke(this, EventArgs.Empty);
