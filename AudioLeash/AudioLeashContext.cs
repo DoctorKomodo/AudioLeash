@@ -33,6 +33,7 @@ public sealed class AudioLeashContext : ApplicationContext
     private readonly System.Windows.Forms.Timer? _startupGraceTimer;
     private string?                          _savedPlaybackDeviceName;
     private string?                          _savedCaptureDeviceName;
+    private SettingsForm?                    _settingsForm;
 
     /// <summary>
     /// How long the selected device's state must stay settled before AudioLeash
@@ -581,8 +582,156 @@ public sealed class AudioLeashContext : ApplicationContext
         RefreshDeviceList();
     }
 
-    /// <summary>Placeholder; the settings window is wired up separately.</summary>
-    private void OpenSettings_Click(object? sender, EventArgs e) { }
+    /// <summary>
+    /// Opens the settings window (modeless), or brings the open one to the front.
+    /// Its edits are applied only when it closes via Save.
+    /// </summary>
+    private void OpenSettings_Click(object? sender, EventArgs e)
+    {
+        if (_settingsForm is not null)
+        {
+            _settingsForm.Activate();
+            return;
+        }
+
+        PriorityListEditor playback, capture;
+        try
+        {
+            playback = CreatePriorityEditor(DataFlow.Render);
+            capture  = CreatePriorityEditor(DataFlow.Capture);
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Could not open settings:\n{ex.Message}");
+            return;
+        }
+
+        var form = new SettingsForm(playback, capture, _startupService.IsEnabled);
+        form.FormClosed += (_, _) =>
+        {
+            _settingsForm = null;
+            if (form.DialogResult == DialogResult.OK)
+                ApplySettings(form, playback, capture);
+            form.Dispose();
+        };
+        _settingsForm = form;
+        form.Show();
+    }
+
+    /// <summary>
+    /// Builds the list editor for <paramref name="flow"/> from its ranked list and every
+    /// endpoint Windows knows about (active, unplugged or disabled).
+    /// </summary>
+    private PriorityListEditor CreatePriorityEditor(DataFlow flow)
+    {
+        var devices = _enumerator
+            .EnumerateAudioEndPoints(flow, DeviceState.Active | DeviceState.Unplugged | DeviceState.Disabled)
+            .ToList();
+        try
+        {
+            var known = devices
+                .Select(d => new DeviceRow(d.ID, d.FriendlyName, d.DeviceFriendlyName, d.State == DeviceState.Active))
+                .ToList();
+            return new PriorityListEditor(PriorityFor(flow).Ranked, known);
+        }
+        finally
+        {
+            foreach (var d in devices) d.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Applies a saved settings window: each flow's new ranked list (switching between
+    /// legacy and priority mode as needed), then the startup option.
+    /// </summary>
+    private void ApplySettings(SettingsForm form, PriorityListEditor playback, PriorityListEditor capture)
+    {
+        ApplyFlowSettings(DataFlow.Render, playback.ToRankedList());
+        ApplyFlowSettings(DataFlow.Capture, capture.ToRankedList());
+
+        if (form.StartWithWindows != _startupService.IsEnabled)
+        {
+            try
+            {
+                if (form.StartWithWindows)
+                    _startupService.Enable(Environment.ProcessPath ?? Application.ExecutablePath);
+                else
+                    _startupService.Disable();
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Could not update startup setting:\n{ex.Message}");
+            }
+        }
+
+        UpdateTrayTooltip();
+        RefreshDeviceList();
+    }
+
+    /// <summary>
+    /// Applies one flow's saved ranked list. The persisted pick follows
+    /// <see cref="PriorityState.PlanPersistedPick"/>: entering priority mode drops the legacy
+    /// pick, staying keeps the override, and leaving pins the current default as the legacy pick.
+    /// </summary>
+    private void ApplyFlowSettings(DataFlow flow, IReadOnlyList<RankedDevice> newList)
+    {
+        var priority  = PriorityFor(flow);
+        var selection = SelectionFor(flow);
+        bool wasPriority = priority.IsPriorityMode;
+        bool isPriority  = newList.Count > 0;
+
+        try
+        {
+            string? pick = PriorityState.PlanPersistedPick(
+                wasPriority, isPriority, selection.SelectedDeviceId, priority.OverrideId, GetCurrentDefaultId(flow));
+
+            // A pick kept from before (legacy pick or override) may not resolve live right now.
+            string? savedName = flow == DataFlow.Render ? _savedPlaybackDeviceName : _savedCaptureDeviceName;
+            string? pickName  = pick is null ? null : GetDeviceName(pick) ?? savedName;
+
+            // Enumerate before committing, so nothing can throw between SetRanked and the
+            // re-evaluation that keeps TargetId consistent with the new list.
+            IReadOnlySet<string> active = isPriority ? GetActiveIds(flow) : new HashSet<string>();
+
+            // Persist first: if the file can't be written, the in-memory state is untouched.
+            if (flow == DataFlow.Render)
+            {
+                _settingsService.SavePlaybackPriority(newList);
+                _settingsService.SaveSelectedPlaybackDevice(pick, pickName);
+                _savedPlaybackDeviceName = pickName;
+            }
+            else
+            {
+                _settingsService.SaveCapturePriority(newList);
+                _settingsService.SaveSelectedCaptureDevice(pick, pickName);
+                _savedCaptureDeviceName = pickName;
+            }
+
+            if (isPriority)
+            {
+                // Entering or staying in priority mode. On entry there's no override (pick is
+                // null); when staying, the existing override carries over untouched.
+                selection.ClearSelection();
+                priority.SetRanked(newList);
+                var decision = priority.EvaluateSettled(active);
+                ApplyPriorityDecision(flow, decision, notify: true);
+            }
+            else
+            {
+                // Legacy mode: drop any override and target. When leaving priority mode, the
+                // current default becomes the legacy pick; an existing legacy pick (staying in
+                // legacy mode) keeps its selection and availability as they are.
+                priority.SetRanked(newList);
+                priority.ReturnToPriority(active);
+                if (wasPriority && pick is not null) selection.SelectDevice(pick);
+            }
+        }
+        catch (Exception ex)
+        {
+            string flowLabel = flow == DataFlow.Render ? "playback" : "recording";
+            ShowError($"Could not apply {flowLabel} settings:\n{ex.Message}");
+        }
+    }
 
     private void ClearSelection_Click(object? sender, EventArgs e)
     {
@@ -1153,6 +1302,7 @@ public sealed class AudioLeashContext : ApplicationContext
                 }
             }
 
+            _settingsForm?.Dispose();
             _sectionHeaderFont.Dispose();
             _trayIcon.Dispose();
             _contextMenu.Dispose();

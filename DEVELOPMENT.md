@@ -113,6 +113,11 @@ AudioLeash/
 │   ├── Program.cs                   ← Entry point; STA thread, WinForms bootstrap
 │   ├── AudioLeashContext.cs         ← All application logic (tray, menu, device events)
 │   ├── DeviceSelectionState.cs      ← Pure selection state machine (unit-testable)
+│   ├── RankedDevice.cs              ← One entry in a ranked priority list (id + cached name)
+│   ├── PriorityState.cs             ← Pure ranked-priority/override state machine (unit-testable)
+│   ├── PriorityListEditor.cs        ← Pure list-editing logic behind the settings window
+│   ├── PriorityListControl.cs       ← Owner-drawn ranked/unranked device list (settings window)
+│   ├── SettingsForm.cs              ← Settings window (Playback / Recording / General tabs)
 │   ├── PolicyConfigClient.cs        ← COM interop: sets Windows default audio endpoint
 │   ├── SettingsService.cs           ← JSON settings persistence (%AppData%\AudioLeash\)
 │   ├── StartupService.cs            ← Windows Run-key startup registration
@@ -125,6 +130,8 @@ AudioLeash/
     ├── AudioLeash.Tests.csproj      ← xUnit + NSubstitute
     ├── DeviceSelectionStateTests.cs
     ├── IconAssetTests.cs
+    ├── PriorityListEditorTests.cs
+    ├── PriorityStateTests.cs
     ├── SettingsServiceTests.cs
     ├── StartupServiceTests.cs
     ├── TrayIconLoaderTests.cs
@@ -137,11 +144,13 @@ AudioLeash/
 - `IMMNotificationClient` callbacks arrive on a Windows COM audio thread and are marshalled back to the UI/STA thread via `SafeInvoke` before touching any UI.
 - `DeviceSelectionState.IsInternalChange` (volatile) prevents feedback loops where the app's own device switch would otherwise re-trigger the change handler.
 - **Debounced device-state handling** — connect/disconnect events for the selected device don't act immediately. `OnDeviceStateChanged` (and the `Suspend` branch of `OnDefaultDeviceChanged`) re-arm a per-flow `System.Windows.Forms.Timer` (`DebounceMs`, 1000 ms). Only once the endpoint stops flapping does `ReconcileDeviceState` re-query the device's actual availability and call `DeviceSelectionState.EvaluateSettledState`, which returns a single `SettledOutcome` reflecting the net change. This collapses rapid flapping (e.g. an HDMI/eARC handshake) into at most one notification — a flap that ends back on the selected device restores it silently. The immediate `Restore` (leash-yank) path in `OnDefaultDeviceChanged` is unaffected and stays snappy.
+- **Legacy vs. priority mode (per flow)** — a flow with an empty ranked list runs in legacy mode: `DeviceSelectionState` enforces the single pick exactly as before. A non-empty list switches the flow to priority mode, driven by `PriorityState`: the target is the highest-ranked connected device, or the manual override while one is in force. `PriorityState` guards its fields with a lock because the audio thread reads them in `EvaluateDefaultChange`; the debounced reconcile calls `EvaluateSettled`, whose `PriorityOutcome` drives one balloon at most. Ranked lists are stored as `PlaybackPriority` / `CapturePriority` (with cached names, so absent devices still display).
+- **The override reuses the `Selected*` fields** — in priority mode, `SelectedPlaybackDeviceId` / `SelectedCaptureDeviceId` (and their names) hold the persisted manual override instead of the legacy pick, so a restart restores it (under a short startup grace period). When the settings window saves a mode change, `PriorityState.PlanPersistedPick` decides what those fields hold: legacy → priority clears them, priority → priority keeps the override, priority → legacy pins the current Windows default as the new legacy pick.
 - The user-selected device (ID and friendly name) is persisted to `%AppData%\AudioLeash\settings.json` via `SettingsService` and restored on startup.
 
 ## Known Issues
 
-- **`SelectedDeviceId` race condition** — `OnDefaultDeviceChanged` reads `SelectedDeviceId` twice on the audio thread (once inside `EvaluateDefaultChange`, once to capture `restoreId`) with no lock between them. If the user clicks "Clear Selection" on the UI thread in that gap, `restoreId` will be `null` despite the `!` assertion. Extremely unlikely in practice, and the inner `try`/`catch` handles the resulting exception gracefully, but a proper fix would snapshot `SelectedDeviceId` once under a lock and pass the snapshot through.
+- None currently tracked.
 
 ## Roadmap
 
@@ -155,4 +164,4 @@ Ideas for future development, roughly in order of interest:
 
 ### Already shipped
 
-Windows-startup toggle · recording-device support · settings persistence · tray tooltip · dark-mode menu · single-instance enforcement · persistent selection for unavailable devices.
+Windows-startup toggle · recording-device support · settings persistence · tray tooltip · dark-mode menu · single-instance enforcement · persistent selection for unavailable devices · device priority.

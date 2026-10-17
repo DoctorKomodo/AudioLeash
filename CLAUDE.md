@@ -41,6 +41,11 @@ AudioLeash/
 │   ├── Program.cs                   ← Entry point; STA thread, WinForms bootstrap
 │   ├── AudioLeashContext.cs         ← All application logic (tray, menu, device events)
 │   ├── DeviceSelectionState.cs      ← Pure selection state machine (unit-testable)
+│   ├── RankedDevice.cs              ← One entry in a ranked priority list (id + cached name)
+│   ├── PriorityState.cs             ← Pure ranked-priority/override state machine (unit-testable)
+│   ├── PriorityListEditor.cs        ← Pure list-editing logic behind the settings window
+│   ├── PriorityListControl.cs       ← Owner-drawn ranked/unranked device list (settings window)
+│   ├── SettingsForm.cs              ← Settings window (Playback / Recording / General tabs)
 │   ├── PolicyConfigClient.cs        ← COM interop: sets Windows default audio endpoint
 │   ├── SettingsService.cs           ← JSON settings persistence (%AppData%\AudioLeash\)
 │   ├── StartupService.cs            ← Windows Run-key startup registration
@@ -53,6 +58,8 @@ AudioLeash/
     ├── AudioLeash.Tests.csproj      ← xUnit + NSubstitute
     ├── DeviceSelectionStateTests.cs
     ├── IconAssetTests.cs
+    ├── PriorityListEditorTests.cs
+    ├── PriorityStateTests.cs
     ├── SettingsServiceTests.cs
     ├── StartupServiceTests.cs
     ├── TrayIconLoaderTests.cs
@@ -64,7 +71,6 @@ AudioLeash/
 - Core logic lives in `AudioLeashContext.cs`. `DeviceSelectionState.cs` and `PolicyConfigClient.cs` are intentional splits: the former enables unit testing of pure logic; the latter isolates COM interop.
 - `DeviceSelectionState.IsInternalChange` (volatile) prevents feedback loops when the app itself triggers a device change.
 - The user-selected device is persisted to `%AppData%\AudioLeash\settings.json` via `SettingsService` and restored on startup.
-- **Known race condition**: `OnDefaultDeviceChanged` reads `SelectedDeviceId` twice on the audio thread without a lock. If the user clicks "Clear Selection" between reads, `restoreId` could be null despite the `!` assertion. The inner `try/catch` handles this gracefully, but a proper fix would snapshot under a lock.
 
 ---
 

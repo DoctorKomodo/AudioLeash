@@ -29,6 +29,12 @@ static class Program
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+
+        // Follow the Windows light/dark theme in the settings window. The tray menu sets
+        // its own renderer (DarkMenuRenderer), so it is unaffected. Experimental since .NET 9.
+#pragma warning disable WFO5001
+        Application.SetColorMode(SystemColorMode.System);
+#pragma warning restore WFO5001
         Application.Run(new AudioLeashContext());
     }
 }
