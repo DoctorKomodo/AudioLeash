@@ -66,11 +66,13 @@ public class IconAssetTests
         (0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B) / 255.0;
 
     [Fact]
-    public void Icon_ContainsAllSixSizes()
+    public void Icon_ContainsEveryTrayAndShellSize()
     {
         int[] sizes = ReadFrames().Select(f => f.Width).OrderBy(w => w).ToArray();
 
-        Assert.Equal(new[] { 16, 32, 48, 64, 128, 256 }, sizes);
+        // 20, 24 and 40 are the tray icon at 125%, 150% and 250% scaling (the app is
+        // per-monitor DPI aware); without them Windows stretches the nearest smaller frame.
+        Assert.Equal(new[] { 16, 20, 24, 32, 40, 48, 64, 128, 256 }, sizes);
     }
 
     /// <summary>

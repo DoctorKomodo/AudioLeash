@@ -23,7 +23,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 SS = 8                       # supersampling factor
-SIZES = [16, 32, 48, 64, 128, 256]
+SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]  # 20/24/40: tray at 125/150/250% DPI
 SIMPLIFIED_UP_TO = 32        # sizes <= this use the SIMPLE geometry
 
 GRADIENT_TOP = (0x22, 0xC3, 0xDE)
@@ -158,7 +158,7 @@ def main() -> None:
 
     # Pillow's ICO writer matches append_images by exact size and embeds them
     # verbatim; only sizes with no matching image get thumbnail()-downscaled.
-    # Supplying all six means none is ever downscaled.
+    # Supplying every size means none is ever downscaled.
     frames[256].save(
         out,
         format="ICO",
