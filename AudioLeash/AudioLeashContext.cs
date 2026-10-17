@@ -629,9 +629,18 @@ public sealed class AudioLeashContext : ApplicationContext
             .ToList();
         try
         {
-            var known = devices
-                .Select(d => new DeviceRow(d.ID, d.FriendlyName, d.DeviceFriendlyName, d.State == DeviceState.Active))
-                .ToList();
+            var known = new List<DeviceRow>();
+            foreach (var d in devices)
+            {
+                try
+                {
+                    known.Add(new DeviceRow(d.ID, d.FriendlyName, d.DeviceFriendlyName, d.State == DeviceState.Active));
+                }
+                catch (Exception)
+                {
+                    // One misbehaving endpoint must not stop the settings window opening.
+                }
+            }
             return new PriorityListEditor(PriorityFor(flow).Ranked, known);
         }
         finally
@@ -693,17 +702,17 @@ public sealed class AudioLeashContext : ApplicationContext
             // re-evaluation that keeps TargetId consistent with the new list.
             IReadOnlySet<string> active = isPriority ? GetActiveIds(flow) : new HashSet<string>();
 
-            // Persist first: if the file can't be written, the in-memory state is untouched.
+            // Persist the list and the pick in one write so a partial write can't leave them
+            // inconsistent. SaveSettings is best-effort: a failed write is silent, and the
+            // in-memory state below is applied regardless.
             if (flow == DataFlow.Render)
             {
-                _settingsService.SavePlaybackPriority(newList);
-                _settingsService.SaveSelectedPlaybackDevice(pick, pickName);
+                _settingsService.SavePlaybackFlow(newList, pick, pickName);
                 _savedPlaybackDeviceName = pickName;
             }
             else
             {
-                _settingsService.SaveCapturePriority(newList);
-                _settingsService.SaveSelectedCaptureDevice(pick, pickName);
+                _settingsService.SaveCaptureFlow(newList, pick, pickName);
                 _savedCaptureDeviceName = pickName;
             }
 
@@ -713,8 +722,23 @@ public sealed class AudioLeashContext : ApplicationContext
                 // null); when staying, the existing override carries over untouched.
                 selection.ClearSelection();
                 priority.SetRanked(newList);
+                string? defaultBefore = GetCurrentDefaultId(flow);
                 var decision = priority.EvaluateSettled(active);
-                ApplyPriorityDecision(flow, decision, notify: true);
+
+                // Editing the list isn't an automatic switch, so the outcome balloons would
+                // misdescribe it; report only a default that actually changed.
+                ApplyPriorityDecision(flow, decision, notify: false);
+
+                string? defaultAfter = GetCurrentDefaultId(flow);
+                if (defaultAfter is not null && defaultAfter != defaultBefore)
+                {
+                    string flowLabel = flow == DataFlow.Render ? "Audio Device" : "Recording Device";
+                    _trayIcon.ShowBalloonTip(
+                        timeout:  3000,
+                        tipTitle: $"{flowLabel} Switched",
+                        tipText:  $"Now using {ResolvePriorityName(priority, defaultAfter)} (priority order)",
+                        tipIcon:  ToolTipIcon.Info);
+                }
             }
             else
             {
@@ -1106,6 +1130,8 @@ public sealed class AudioLeashContext : ApplicationContext
 
         (string title, string text, ToolTipIcon icon)? balloon = decision.Outcome switch
         {
+            PriorityOutcome.SwitchedUp when decision.PreviousTargetId is null =>
+                ($"{flowLabel} Switched", $"Switched to {name}", ToolTipIcon.Info),
             PriorityOutcome.SwitchedUp =>
                 ($"{flowLabel} Switched", $"Switched to {name} (higher priority)", ToolTipIcon.Info),
             PriorityOutcome.FellBack =>
