@@ -81,7 +81,8 @@ internal sealed class SettingsForm : Form
             Checked        = startWithWindows,
             Anchor         = AnchorStyles.Right,
             BackColor      = theme.Surface,
-            AccessibleName = "Start with Windows",
+            AccessibleName        = "Start with Windows",
+            AccessibleDescription = "Launch AudioLeash when you sign in",
             Margin         = new Padding(12, 0, 0, 0),
         };
         _startWithWindows.Toggled += (_, _) =>
@@ -127,9 +128,7 @@ internal sealed class SettingsForm : Form
             c.Click += (_, _) => _startWithWindows.Focus();
             c.MouseClick += (_, e) =>
             {
-                if (e.Button != MouseButtons.Left) return;
-                _startWithWindows.Checked = !_startWithWindows.Checked;
-                StartWithWindowsToggled?.Invoke(this, EventArgs.Empty);
+                if (e.Button == MouseButtons.Left) _startWithWindows.Toggle();
             };
         }
 

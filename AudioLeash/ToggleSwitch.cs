@@ -16,6 +16,7 @@ internal sealed class ToggleSwitch : Control
     private readonly SettingsTheme _theme;
     private bool _checked;
     private bool _hot;
+    private bool _spaceDown; // toggles on key-up like a native checkbox, so auto-repeat can't flip it repeatedly
 
     public ToggleSwitch(SettingsTheme theme)
     {
@@ -43,6 +44,9 @@ internal sealed class ToggleSwitch : Control
             AccessibilityNotifyClients(AccessibleEvents.StateChange, -1);
         }
     }
+
+    /// <summary>Flips the switch as if the user clicked it, raising <see cref="Toggled"/>.</summary>
+    public void Toggle() => Flip();
 
     private void Flip()
     {
@@ -103,6 +107,15 @@ internal sealed class ToggleSwitch : Control
     {
         base.OnKeyDown(e);
         if (e.KeyCode != Keys.Space) return;
+        _spaceDown = true;
+        e.Handled = true;
+    }
+
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        base.OnKeyUp(e);
+        if (e.KeyCode != Keys.Space || !_spaceDown) return;
+        _spaceDown = false;
         Flip();
         e.Handled = true;
     }
@@ -110,7 +123,7 @@ internal sealed class ToggleSwitch : Control
     protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); _hot = true;  Invalidate(); }
     protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); _hot = false; Invalidate(); }
     protected override void OnGotFocus(EventArgs e)   { base.OnGotFocus(e);   Invalidate(); }
-    protected override void OnLostFocus(EventArgs e)  { base.OnLostFocus(e);  Invalidate(); }
+    protected override void OnLostFocus(EventArgs e)  { base.OnLostFocus(e);  _spaceDown = false; Invalidate(); }
 
     protected override AccessibleObject CreateAccessibilityInstance() => new SwitchAccessibleObject(this);
 

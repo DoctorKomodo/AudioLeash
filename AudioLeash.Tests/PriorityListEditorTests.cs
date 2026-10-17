@@ -291,4 +291,22 @@ public class PriorityListEditorTests
             [new RankedDevice("a", "A"), new RankedDevice("a", "A again")], [Row("a", "A")]);
         Assert.False(editor.HasChanges);
     }
+
+    [Fact]
+    public void HasChanges_RankedThenUnrankedAgain_IsFalse()
+    {
+        var editor = TwoRanked();
+        editor.MoveUp("c");   // ranks c at the end
+        editor.MoveDown("c"); // last ranked row: unranks it again
+        Assert.False(editor.HasChanges);
+    }
+
+    [Fact]
+    public void HasChanges_EverythingUnranked_IsTrue()
+    {
+        var editor = TwoRanked();
+        editor.MoveTo("a", toRanked: false, index: 0);
+        editor.MoveTo("b", toRanked: false, index: 0);
+        Assert.True(editor.HasChanges);
+    }
 }

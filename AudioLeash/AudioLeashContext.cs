@@ -595,7 +595,7 @@ public sealed class AudioLeashContext : ApplicationContext
 
     /// <summary>
     /// Opens the settings window (modeless), or brings the open one to the front.
-    /// Its edits are applied only when it closes via Save.
+    /// Its list edits apply when it closes.
     /// </summary>
     private void OpenSettings_Click(object? sender, EventArgs e)
     {
@@ -631,8 +631,8 @@ public sealed class AudioLeashContext : ApplicationContext
                         || e.CloseReason is CloseReason.ApplicationExitCall
                                          or CloseReason.WindowsShutDown
                                          or CloseReason.TaskManagerClosing;
-            ApplySettings(playback, capture, exiting);
-            form.Dispose();
+            try { ApplySettings(playback, capture, exiting); }
+            finally { form.Dispose(); }
         };
         _settingsForm = form;
         form.Show();
@@ -700,8 +700,12 @@ public sealed class AudioLeashContext : ApplicationContext
 
         try
         {
+            // Only leaving priority mode needs the live default (it becomes the legacy pick).
+            // Skipping COM calls otherwise also keeps the exit path from depending on the
+            // audio service, which may already be going away during logoff.
+            string? currentDefault = wasPriority && !isPriority ? GetCurrentDefaultId(flow) : null;
             string? pick = PriorityState.PlanPersistedPick(
-                wasPriority, isPriority, selection.SelectedDeviceId, priority.OverrideId, GetCurrentDefaultId(flow));
+                wasPriority, isPriority, selection.SelectedDeviceId, priority.OverrideId, currentDefault);
 
             // A pick kept from before (legacy pick or override) may not resolve live right now.
             string? savedName = flow == DataFlow.Render ? _savedPlaybackDeviceName : _savedCaptureDeviceName;
@@ -709,7 +713,7 @@ public sealed class AudioLeashContext : ApplicationContext
 
             // Enumerate before committing, so nothing can throw between SetRanked and the
             // re-evaluation that keeps TargetId consistent with the new list.
-            IReadOnlySet<string> active = isPriority ? GetActiveIds(flow) : new HashSet<string>();
+            IReadOnlySet<string> active = isPriority && !exiting ? GetActiveIds(flow) : new HashSet<string>();
 
             // Persist the list and the pick in one write so a partial write can't leave them
             // inconsistent. SaveSettings is best-effort: a failed write is silent, and the
@@ -762,6 +766,8 @@ public sealed class AudioLeashContext : ApplicationContext
         }
         catch (Exception ex)
         {
+            // Never block an exit (logoff, installer) with a modal dialog.
+            if (exiting) return;
             string flowLabel = flow == DataFlow.Render ? "playback" : "recording";
             ShowError($"Could not apply {flowLabel} settings:\n{ex.Message}");
         }
