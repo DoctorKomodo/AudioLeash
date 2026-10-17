@@ -173,4 +173,79 @@ public class PriorityListEditorTests
             [new RankedDevice("b", "B"), new RankedDevice("a", "New A", "nA"), new RankedDevice("c", "C")],
             editor.ToRankedList());
     }
+    // Display layout for DropAtGap: ranked rows, the divider, then unranked rows.
+    // Gap g is the slot just above display row g (g == row count means the very end).
+
+    private static PriorityListEditor ThreeRankedTwoUnranked() => new(
+        [new RankedDevice("a", "A"), new RankedDevice("b", "B"), new RankedDevice("c", "C")],
+        [Row("a", "A"), Row("b", "B"), Row("c", "C"), Row("x", "X"), Row("y", "Y")]);
+
+    [Fact]
+    public void DropAtGap_RankedRowDraggedDown_LandsAboveTheTargetRow()
+    {
+        var editor = ThreeRankedTwoUnranked();
+
+        editor.DropAtGap("a", gap: 2); // between b and c
+
+        Assert.Equal(["b", "a", "c"], Ids(editor.Ranked));
+    }
+
+    [Fact]
+    public void DropAtGap_RankedRowDraggedUp_LandsAboveTheTargetRow()
+    {
+        var editor = ThreeRankedTwoUnranked();
+
+        editor.DropAtGap("c", gap: 0);
+
+        Assert.Equal(["c", "a", "b"], Ids(editor.Ranked));
+    }
+
+    [Fact]
+    public void DropAtGap_JustAboveDivider_MovesToEndOfRanked()
+    {
+        var editor = ThreeRankedTwoUnranked();
+
+        editor.DropAtGap("a", gap: 3);
+        Assert.Equal(["b", "c", "a"], Ids(editor.Ranked));
+
+        editor.DropAtGap("x", gap: 3);
+        Assert.Equal(["b", "c", "a", "x"], Ids(editor.Ranked));
+        Assert.Equal(["y"], Ids(editor.Unranked));
+    }
+
+    [Fact]
+    public void DropAtGap_OwnSlot_IsNoOp()
+    {
+        var editor = ThreeRankedTwoUnranked();
+
+        editor.DropAtGap("b", gap: 1);
+        editor.DropAtGap("b", gap: 2);
+
+        Assert.Equal(["a", "b", "c"], Ids(editor.Ranked));
+    }
+
+    [Fact]
+    public void DropAtGap_BelowDivider_Unranks()
+    {
+        var editor = ThreeRankedTwoUnranked();
+
+        editor.DropAtGap("b", gap: 4); // just below the divider
+        Assert.Equal(["a", "c"], Ids(editor.Ranked));
+        Assert.Equal(["b", "x", "y"], Ids(editor.Unranked));
+
+        editor.DropAtGap("a", gap: 99); // past the end
+        Assert.Equal(["c"], Ids(editor.Ranked));
+        Assert.Equal(["a", "b", "x", "y"], Ids(editor.Unranked));
+    }
+
+    [Fact]
+    public void DropAtGap_UnrankedRowIntoRanked_InsertsAtGap()
+    {
+        var editor = ThreeRankedTwoUnranked();
+
+        editor.DropAtGap("y", gap: 1);
+
+        Assert.Equal(["a", "y", "b", "c"], Ids(editor.Ranked));
+        Assert.Equal(["x"], Ids(editor.Unranked));
+    }
 }

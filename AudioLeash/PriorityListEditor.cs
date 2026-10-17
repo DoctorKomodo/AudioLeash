@@ -105,6 +105,25 @@ internal sealed class PriorityListEditor
         }
     }
 
+    /// <summary>
+    /// Drag-and-drop helper. The display shows <see cref="Ranked"/>, a divider row, then
+    /// <see cref="Unranked"/>; <paramref name="gap"/> is the slot just above display row
+    /// <paramref name="gap"/> (row count = the end). Gaps up to and including the one just
+    /// above the divider rank the row there; any lower gap unranks it.
+    /// </summary>
+    public void DropAtGap(string id, int gap)
+    {
+        if (gap > _ranked.Count)
+        {
+            MoveTo(id, toRanked: false, index: 0);
+            return;
+        }
+
+        // MoveTo removes a ranked row before inserting, which shifts later slots up by one.
+        int current = _ranked.FindIndex(r => r.Id == id);
+        MoveTo(id, toRanked: true, index: current >= 0 && current < gap ? gap - 1 : gap);
+    }
+
     public IReadOnlyList<RankedDevice> ToRankedList()
         => _ranked.Select(r => new RankedDevice(r.Id, r.Name, r.Description)).ToArray();
 
