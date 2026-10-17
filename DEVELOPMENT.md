@@ -117,7 +117,10 @@ AudioLeash/
 │   ├── PriorityState.cs             ← Pure ranked-priority/override state machine (unit-testable)
 │   ├── PriorityListEditor.cs        ← Pure list-editing logic behind the settings window
 │   ├── PriorityListControl.cs       ← Owner-drawn ranked/unranked device list (settings window)
-│   ├── SettingsForm.cs              ← Settings window (Playback / Recording / General tabs)
+│   ├── SettingsForm.cs              ← Settings window (Playback / Recording tabs, footer with Start with Windows)
+│   ├── SettingsTheme.cs             ← Light/dark palette the settings window draws with
+│   ├── UnderlineTabStrip.cs         ← Flat underline tabs used by the settings window
+│   ├── ThemedControls.cs            ← Flat themed styling for buttons in the settings window
 │   ├── PolicyConfigClient.cs        ← COM interop: sets Windows default audio endpoint
 │   ├── SettingsService.cs           ← JSON settings persistence (%AppData%\AudioLeash\)
 │   ├── StartupService.cs            ← Windows Run-key startup registration

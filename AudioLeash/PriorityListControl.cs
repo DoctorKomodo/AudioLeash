@@ -14,8 +14,6 @@ internal sealed class PriorityListControl : UserControl
 {
     internal const string DividerText = "Not ranked: AudioLeash won't switch to these on its own";
 
-    private static readonly Color ConnectedColor = Color.FromArgb(0x2E, 0xA0, 0x43);
-
     /// <summary>Placeholder item for the divider row between ranked and unranked devices.</summary>
     private sealed class Divider
     {
@@ -24,6 +22,7 @@ internal sealed class PriorityListControl : UserControl
     }
 
     private readonly PriorityListEditor _editor;
+    private readonly SettingsTheme _theme;
     private readonly ListBox _list;
     private readonly Button _upButton;
     private readonly Button _downButton;
@@ -36,10 +35,12 @@ internal sealed class PriorityListControl : UserControl
     private int _dropGap = -1; // insertion slot shown while dragging; -1 = none
     private string? _draggingId; // set only while a drag started in this list is in progress
 
-    public PriorityListControl(PriorityListEditor editor)
+    public PriorityListControl(PriorityListEditor editor, SettingsTheme theme)
     {
         _editor = editor;
+        _theme  = theme;
         _smallFont = CreateSmallFont(Font);
+        BackColor  = theme.Window;
 
         _list = new ListBox
         {
@@ -48,6 +49,9 @@ internal sealed class PriorityListControl : UserControl
             IntegralHeight     = false,
             AllowDrop          = true,
             SelectionMode      = SelectionMode.One,
+            BorderStyle        = BorderStyle.None,
+            BackColor          = theme.Surface,
+            ForeColor          = theme.Text,
         };
         _list.DrawItem             += List_DrawItem;
         _list.SelectedIndexChanged += List_SelectedIndexChanged;
@@ -59,8 +63,10 @@ internal sealed class PriorityListControl : UserControl
         _list.DragLeave            += (_, _) => SetDropGap(-1);
         _list.Resize               += (_, _) => _list.Invalidate();
 
-        _upButton   = new Button { Text = "▲", Width = 36, Height = 32, AccessibleName = "Move up" };
-        _downButton = new Button { Text = "▼", Width = 36, Height = 32, AccessibleName = "Move down" };
+        _upButton   = ThemedControls.StyleButton(
+            new Button { Text = "▲", Width = 36, Height = 32, AccessibleName = "Move up" }, theme);
+        _downButton = ThemedControls.StyleButton(
+            new Button { Text = "▼", Width = 36, Height = 32, AccessibleName = "Move down" }, theme);
         _upButton.Click   += (_, _) => MoveSelected(up: true);
         _downButton.Click += (_, _) => MoveSelected(up: false);
 
@@ -70,12 +76,20 @@ internal sealed class PriorityListControl : UserControl
             FlowDirection = FlowDirection.TopDown,
             AutoSize      = true,
             WrapContents  = false,
-            Padding       = new Padding(6, 0, 0, 0),
+            Padding       = new Padding(8, 0, 0, 0),
+            BackColor     = theme.Window,
         };
         buttons.Controls.Add(_upButton);
         buttons.Controls.Add(_downButton);
 
-        Controls.Add(_list);
+        // A one-pixel themed frame around the borderless list (the ListBox's own 3D/fixed
+        // border ignores dark mode), with a little inner padding so rows don't touch it.
+        var frame = new Panel { Dock = DockStyle.Fill, Padding = new Padding(1), BackColor = theme.Border };
+        var inner = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 4, 0, 4), BackColor = theme.Surface };
+        inner.Controls.Add(_list);
+        frame.Controls.Add(inner);
+
+        Controls.Add(frame);
         Controls.Add(buttons);
 
         UpdateItemHeight();
@@ -263,9 +277,18 @@ internal sealed class PriorityListControl : UserControl
         bool selected = (e.State & DrawItemState.Selected) != 0;
         bool isRanked = e.Index < _dividerIndex;
 
-        e.DrawBackground();
-        Color fore  = selected ? SystemColors.HighlightText : SystemColors.WindowText;
-        Color muted = selected ? SystemColors.HighlightText : SystemColors.GrayText;
+        using (var back = new SolidBrush(selected ? _theme.Selection : _theme.Surface))
+            g.FillRectangle(back, bounds);
+        if (selected)
+        {
+            // Windows 11 list selection: a short accent pill at the left edge.
+            int pill = LogicalToDeviceUnits(3);
+            int inset = bounds.Height / 4;
+            using var accent = new SolidBrush(_theme.Accent);
+            g.FillRectangle(accent, bounds.Left, bounds.Top + inset, pill, bounds.Height - 2 * inset);
+        }
+        Color fore  = _theme.Text;
+        Color muted = _theme.MutedText;
 
         const TextFormatFlags Flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine
                                     | TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter;
@@ -283,7 +306,7 @@ internal sealed class PriorityListControl : UserControl
 
         // Connected dot.
         int dot = LogicalToDeviceUnits(8);
-        using (var brush = new SolidBrush(row.IsConnected ? ConnectedColor : SystemColors.GrayText))
+        using (var brush = new SolidBrush(row.IsConnected ? _theme.Connected : _theme.Disconnected))
         {
             var oldMode = g.SmoothingMode;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
@@ -319,7 +342,8 @@ internal sealed class PriorityListControl : UserControl
                 new Rectangle(x, top + nameHeight, width, descHeight), muted, Flags);
         }
 
-        e.DrawFocusRectangle();
+        if ((e.State & DrawItemState.Focus) != 0 && (e.State & DrawItemState.NoFocusRect) == 0)
+            ControlPaint.DrawFocusRectangle(g, bounds, fore, selected ? _theme.Selection : _theme.Surface);
     }
 
     private void DrawDivider(Graphics g, Rectangle bounds)
@@ -332,14 +356,14 @@ internal sealed class PriorityListControl : UserControl
                                     | TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter;
         var textRect = new Rectangle(bounds.Left + pad, bounds.Top, bounds.Width - 2 * pad, bounds.Height);
         int textWidth = Math.Min(textRect.Width, TextRenderer.MeasureText(g, DividerText, _smallFont).Width);
-        TextRenderer.DrawText(g, DividerText, _smallFont, textRect, SystemColors.GrayText, Flags);
+        TextRenderer.DrawText(g, DividerText, _smallFont, textRect, _theme.MutedText, Flags);
 
         // Rule to the right of the label.
         int lineStart = textRect.Left + textWidth + pad;
         if (lineStart < bounds.Right - pad)
         {
             int mid = bounds.Top + bounds.Height / 2;
-            using var pen = new Pen(SystemColors.GrayText);
+            using var pen = new Pen(_theme.Border);
             g.DrawLine(pen, lineStart, mid, bounds.Right - pad, mid);
         }
     }
@@ -352,7 +376,7 @@ internal sealed class PriorityListControl : UserControl
         else if (_dropGap == index + 1 && index == _list.Items.Count - 1) y = bounds.Bottom - 2;
         else return;
 
-        using var brush = new SolidBrush(SystemColors.Highlight);
+        using var brush = new SolidBrush(_theme.Accent);
         g.FillRectangle(brush, bounds.Left, y, bounds.Width, 2);
     }
 

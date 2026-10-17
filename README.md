@@ -27,7 +27,7 @@ AudioLeash lives in the system tray. **Click the tray icon** (left- or right-cli
 - **Spot a hijack** — if Windows has quietly switched away from your pick, the current default is labelled **(Windows default)** so you always know the real state.
 - **Clear Selection** — stop locking and let Windows manage devices on its own again. (With a priority list set up, **Return to priority order** takes its place — see below.)
 - **Settings…** — open the settings window to rank your devices (see [Device priority](#device-priority)).
-- **Start with Windows** — toggle launch-at-login on or off. Also available on the settings window's **General** tab.
+- **Start with Windows** — toggle launch-at-login on or off. Also available at the bottom of the settings window.
 - **Exit** — quit the app.
 
 Once a device is locked you can forget about it. If Windows switches away — because you plugged something in, or an app grabbed the default — AudioLeash switches back automatically and shows a brief notification.

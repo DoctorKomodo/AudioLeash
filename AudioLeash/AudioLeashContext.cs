@@ -658,7 +658,8 @@ public sealed class AudioLeashContext : ApplicationContext
         ApplyFlowSettings(DataFlow.Render, playback.ToRankedList());
         ApplyFlowSettings(DataFlow.Capture, capture.ToRankedList());
 
-        if (form.StartWithWindows != _startupService.IsEnabled)
+        // Only when changed in the window: a tray toggle made while it was open must stand.
+        if (form.StartWithWindowsChanged && form.StartWithWindows != _startupService.IsEnabled)
         {
             try
             {
@@ -760,13 +761,15 @@ public sealed class AudioLeashContext : ApplicationContext
     private void ClearSelection_Click(object? sender, EventArgs e)
     {
         // Legacy flows only: a priority-mode flow is released via "Return to priority order".
-        if (!_playbackPriority.IsPriorityMode)
+        bool playbackLegacy = !_playbackPriority.IsPriorityMode;
+        bool captureLegacy  = !_capturePriority.IsPriorityMode;
+        if (playbackLegacy)
         {
             _selection.ClearSelection();
             _savedPlaybackDeviceName = null;
             _settingsService.SaveSelectedPlaybackDevice(null, null);
         }
-        if (!_capturePriority.IsPriorityMode)
+        if (captureLegacy)
         {
             _captureSelection.ClearSelection();
             _savedCaptureDeviceName = null;
@@ -774,10 +777,17 @@ public sealed class AudioLeashContext : ApplicationContext
         }
         UpdateTrayTooltip();
 
+        // In a mixed setup, say which flow was released and that the other keeps enforcing.
+        string tipText = (playbackLegacy, captureLegacy) switch
+        {
+            (true, false) => "Playback auto-restore disabled. Recording still follows your priority order.",
+            (false, true) => "Recording auto-restore disabled. Playback still follows your priority order.",
+            _             => "Auto-restore disabled. Select a device to re-enable.",
+        };
         _trayIcon.ShowBalloonTip(
             timeout:  2500,
             tipTitle: "Selection Cleared",
-            tipText:  "Auto-restore disabled. Select a device to re-enable.",
+            tipText:  tipText,
             tipIcon:  ToolTipIcon.Info);
 
         RefreshDeviceList();

@@ -78,7 +78,7 @@ Behaviour is exactly as today. A manual pick is persisted and enforced indefinit
 Approved layout: **"one list with a not-ranked section"** (mockup B).
 
 - Opened from a new **"Settings…"** item in the tray menu.
-- Three tabs: **Playback**, **Recording**, **General**.
+- Two flat underline tabs: **Playback** and **Recording**. *(Revised after first hands-on use: the classic tab control didn't follow dark mode, and a General tab for one checkbox felt empty.)*
 - **Playback / Recording tabs:** a single list per tab.
   - Above a divider: ranked devices, in order, with their rank number.
   - Below the divider labelled *"Not ranked: AudioLeash won't switch to these on its own"*: every other device Windows knows about for that flow.
@@ -86,7 +86,8 @@ Approved layout: **"one list with a not-ranked section"** (mockup B).
   - Reordering: drag and drop, including across the divider to rank or unrank a device, plus ▲/▼ buttons that move the selected row. ▲/▼ across the divider ranks or unranks the device as well.
   - A ranked device that isn't currently connected stays in its place and is shown as "not connected". That means the ranked list must persist each device's friendly name (and description) so it can be shown while the device is absent, the same way the app already persists `SelectedPlaybackDeviceName`.
   - Newly seen devices appear under "Not ranked".
-- **General tab:** "Start with Windows". This also stays in the tray menu.
+- **Footer band** (slightly darker, Windows 11 dialog style): "Start with Windows" on the left, **Save** (accent) and **Cancel** on the right. "Start with Windows" also stays in the tray menu, and Save only applies it if it was changed in the window.
+- The window draws its own tabs, list frame and buttons from a light/dark palette, so it matches the Windows theme.
 - **Save / Cancel.** Nothing applies until Save. Cancel or closing the window discards the changes. When you click Save, AudioLeash re-evaluates the target for each flow immediately.
 - **What Save does to the current state** (per flow; *these are design calls, not the user's decisions*):
   - **No list → list (legacy → priority):** the legacy pick is dropped, and the target becomes the top connected ranked device, the same as at startup. It does not turn into an override.
