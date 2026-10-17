@@ -511,9 +511,7 @@ public sealed class AudioLeashContext : ApplicationContext
 
             UpdateTrayTooltip();
             RefreshDeviceList();
-            // The device did change; only persisting/refreshing failed.
-            ShowError($"Device switched, but the choice could not be saved:
-{ex.Message}");
+            ShowError($"Could not set device:\n{ex.Message}");
             return;
         }
 
@@ -542,7 +540,8 @@ public sealed class AudioLeashContext : ApplicationContext
         }
         catch (Exception ex)
         {
-            ShowError($"Could not set device:\n{ex.Message}");
+            // The device did change; only persisting/refreshing failed.
+            ShowError($"Device switched, but the choice could not be saved:\n{ex.Message}");
         }
     }
 
