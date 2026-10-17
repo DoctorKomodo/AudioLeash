@@ -209,6 +209,24 @@ public class DeviceSelectionStateTests
         Assert.True(state.IsDeviceAvailable);
     }
 
+    // ── EvaluateDefaultChange (snapshot overload) ────────────────────────
+
+    [Fact]
+    public void EvaluateDefaultChange_Snapshot_RestoreIdIsSelectionAtEvaluationTime()
+    {
+        var state = new DeviceSelectionState();
+        state.SelectDevice("A");
+
+        var result = state.EvaluateDefaultChange("B", id =>
+        {
+            state.ClearSelection();
+            return true;
+        });
+
+        Assert.Equal(RestoreDecision.Restore, result.Decision);
+        Assert.Equal("A", result.RestoreId);
+    }
+
     [Fact]
     public void SetDeviceAvailability_UpdatesState()
     {

@@ -8,6 +8,12 @@ internal enum RestoreDecision
 }
 
 /// <summary>
+/// Result of evaluating a default-device change. <see cref="RestoreId"/> is non-null
+/// whenever <see cref="Decision"/> is <see cref="RestoreDecision.Restore"/>.
+/// </summary>
+internal readonly record struct DefaultChangeDecision(RestoreDecision Decision, string? RestoreId);
+
+/// <summary>
 /// The action to take once a burst of device state changes has settled
 /// (see <see cref="DeviceSelectionState.EvaluateSettledState"/>). A rapid
 /// disconnect/reconnect flap collapses to a single outcome reflecting the
@@ -91,13 +97,28 @@ internal sealed class DeviceSelectionState
     public RestoreDecision EvaluateDefaultChange(
         string newDefaultId,
         bool isSelectedDeviceAvailable)
-    {
-        if (IsInternalChange)          return RestoreDecision.NoAction;
-        if (SelectedDeviceId is null)  return RestoreDecision.NoAction;
-        if (newDefaultId == SelectedDeviceId) return RestoreDecision.NoAction;
-        if (!isSelectedDeviceAvailable) return RestoreDecision.Suspend;
+        => EvaluateDefaultChange(newDefaultId, _ => isSelectedDeviceAvailable).Decision;
 
-        return RestoreDecision.Restore;
+    /// <summary>
+    /// Snapshot variant of <see cref="EvaluateDefaultChange(string, bool)"/>: reads
+    /// <see cref="SelectedDeviceId"/> exactly once, so the availability check and the
+    /// returned <see cref="DefaultChangeDecision.RestoreId"/> always agree even if
+    /// the user clears the selection concurrently.
+    /// </summary>
+    /// <param name="newDefaultId">The ID of the device Windows just made the default.</param>
+    /// <param name="isDeviceActive">Whether the given device ID is present and active.</param>
+    internal DefaultChangeDecision EvaluateDefaultChange(
+        string newDefaultId,
+        Func<string, bool> isDeviceActive)
+    {
+        var selected = SelectedDeviceId;
+
+        if (IsInternalChange || selected is null || newDefaultId == selected)
+            return new DefaultChangeDecision(RestoreDecision.NoAction, null);
+        if (!isDeviceActive(selected))
+            return new DefaultChangeDecision(RestoreDecision.Suspend, null);
+
+        return new DefaultChangeDecision(RestoreDecision.Restore, selected);
     }
 
     /// <summary>
