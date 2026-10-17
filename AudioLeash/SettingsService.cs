@@ -181,6 +181,39 @@ public sealed class SettingsService
         => SaveSettings((LoadSettings() ?? Empty) with { CapturePriority = list });
 
     /// <summary>
+    /// Persists the ranked playback list and the playback pick (id and name) in a single
+    /// write, preserving the capture flow. Clears the legacy <c>SelectedDeviceId</c> field.
+    /// </summary>
+    public void SavePlaybackFlow(IReadOnlyList<RankedDevice> list, string? pickId, string? pickName)
+    {
+        SaveSettings((LoadSettings() ?? Empty) with
+        {
+            SelectedDeviceId = null,
+            SelectedPlaybackDeviceId = pickId,
+            SelectedPlaybackDeviceName = pickName,
+            PlaybackPriority = list,
+        });
+    }
+
+    /// <summary>
+    /// Persists the ranked capture list and the capture pick (id and name) in a single
+    /// write, preserving the playback flow. Migrates the legacy <c>SelectedDeviceId</c>
+    /// to the playback field if present.
+    /// </summary>
+    public void SaveCaptureFlow(IReadOnlyList<RankedDevice> list, string? pickId, string? pickName)
+    {
+        var existing = LoadSettings() ?? Empty;
+        SaveSettings(existing with
+        {
+            SelectedDeviceId = null,
+            SelectedPlaybackDeviceId = existing.SelectedPlaybackDeviceId ?? existing.SelectedDeviceId,
+            SelectedCaptureDeviceId = pickId,
+            SelectedCaptureDeviceName = pickName,
+            CapturePriority = list,
+        });
+    }
+
+    /// <summary>
     /// Drops entries with a null/empty Id, keeps the first occurrence of each Id,
     /// and replaces a null Name. JSON deserialization can yield nulls despite non-nullable types.
     /// </summary>

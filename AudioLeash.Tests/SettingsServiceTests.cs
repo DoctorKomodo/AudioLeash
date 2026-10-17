@@ -327,6 +327,52 @@ public sealed class SettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public void SavePlaybackFlow_RoundTripsListAndPick()
+    {
+        var svc = Svc();
+        var list = new[] { new RankedDevice("tv", "LG TV"), new RankedDevice("hp", "Headphones") };
+        svc.SavePlaybackFlow(list, "spk", "Speakers");
+        Assert.Equal(list, svc.LoadPlaybackPriority());
+        Assert.Equal("spk", svc.LoadSelectedPlaybackDeviceId());
+        Assert.Equal("Speakers", svc.LoadSelectedPlaybackDeviceName());
+    }
+
+    [Fact]
+    public void SaveCaptureFlow_RoundTripsListAndPick()
+    {
+        var svc = Svc();
+        var list = new[] { new RankedDevice("mic", "Headset Mic") };
+        svc.SaveCaptureFlow(list, "line", "Line In");
+        Assert.Equal(list, svc.LoadCapturePriority());
+        Assert.Equal("line", svc.LoadSelectedCaptureDeviceId());
+        Assert.Equal("Line In", svc.LoadSelectedCaptureDeviceName());
+    }
+
+    [Fact]
+    public void SavePlaybackFlow_PreservesCaptureListAndSelection()
+    {
+        var svc = Svc();
+        svc.SaveCaptureFlow(new[] { new RankedDevice("mic", "Headset Mic") }, "line", "Line In");
+        svc.SavePlaybackFlow(new[] { new RankedDevice("tv", "LG TV") }, null, null);
+        Assert.Single(svc.LoadCapturePriority());
+        Assert.Equal("line", svc.LoadSelectedCaptureDeviceId());
+        Assert.Equal("Line In", svc.LoadSelectedCaptureDeviceName());
+        Assert.Null(svc.LoadSelectedPlaybackDeviceId());
+    }
+
+    [Fact]
+    public void SaveCaptureFlow_PreservesPlaybackListAndSelection()
+    {
+        var svc = Svc();
+        svc.SavePlaybackFlow(new[] { new RankedDevice("tv", "LG TV") }, "spk", "Speakers");
+        svc.SaveCaptureFlow(Array.Empty<RankedDevice>(), null, null);
+        Assert.Single(svc.LoadPlaybackPriority());
+        Assert.Equal("spk", svc.LoadSelectedPlaybackDeviceId());
+        Assert.Equal("Speakers", svc.LoadSelectedPlaybackDeviceName());
+        Assert.Empty(svc.LoadCapturePriority());
+    }
+
+    [Fact]
     public void LoadPlaybackPriority_LegacyFileWithoutField_ReturnsEmptyAndKeepsSelection()
     {
         Directory.CreateDirectory(_tempDir);
