@@ -191,7 +191,10 @@ internal sealed class SettingsForm : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        SetDwmAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE, _theme == SettingsTheme.Dark ? 1 : 0);
+        if (SystemInformation.HighContrast) return; // leave the user's high-contrast colours alone
+
+        bool dark = _theme.Window.GetBrightness() < 0.5f;
+        SetDwmAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE, dark ? 1 : 0);
         SetDwmAttribute(DWMWA_CAPTION_COLOR, ColorTranslator.ToWin32(_theme.Window));
         SetDwmAttribute(DWMWA_TEXT_COLOR,    ColorTranslator.ToWin32(_theme.Text));
         SetDwmAttribute(DWMWA_BORDER_COLOR,  ColorTranslator.ToWin32(_theme.Border));
