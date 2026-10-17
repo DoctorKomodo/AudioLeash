@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace AudioLeash;
@@ -18,6 +19,7 @@ internal sealed class SettingsForm : Form
     private const string RecordingHint = "AudioLeash keeps the highest-ranked connected recording device as the default.";
     private const string RankHint      = " Drag devices, or use ▲/▼, to rank them. Changes apply when you close this window.";
 
+    private readonly SettingsTheme     _theme;
     private readonly UnderlineTabStrip _tabs;
     private readonly ToggleSwitch      _startWithWindows;
     private readonly Icon              _icon;
@@ -27,6 +29,7 @@ internal sealed class SettingsForm : Form
         PriorityListEditor playback, PriorityListEditor capture, bool startWithWindows, SettingsTheme? theme = null)
     {
         theme ??= SettingsTheme.Current;
+        _theme = theme;
 
         SuspendLayout();
 
@@ -169,6 +172,33 @@ internal sealed class SettingsForm : Form
     /// change made from the tray menu, or to revert a toggle that couldn't be applied.
     /// </summary>
     public void SetStartWithWindows(bool enabled) => _startWithWindows.Checked = enabled;
+
+    // ── Title bar ───────────────────────────────────────────────────────
+
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+    private const int DWMWA_BORDER_COLOR            = 34;
+    private const int DWMWA_CAPTION_COLOR           = 35;
+    private const int DWMWA_TEXT_COLOR              = 36;
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    /// <summary>
+    /// The title bar is drawn by Windows, not the form, so it doesn't follow the palette on its
+    /// own. Colour it to match the window (Windows 11 22000+; older versions reject the colour
+    /// attributes and keep the default title bar, which is fine).
+    /// </summary>
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        SetDwmAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE, _theme == SettingsTheme.Dark ? 1 : 0);
+        SetDwmAttribute(DWMWA_CAPTION_COLOR, ColorTranslator.ToWin32(_theme.Window));
+        SetDwmAttribute(DWMWA_TEXT_COLOR,    ColorTranslator.ToWin32(_theme.Text));
+        SetDwmAttribute(DWMWA_BORDER_COLOR,  ColorTranslator.ToWin32(_theme.Border));
+    }
+
+    private void SetDwmAttribute(int attribute, int value) =>
+        _ = DwmSetWindowAttribute(Handle, attribute, ref value, sizeof(int)); // best-effort; see above
 
     /// <summary>
     /// Esc closes the window (which applies the edits). Ctrl+Tab / Ctrl+Shift+Tab and
