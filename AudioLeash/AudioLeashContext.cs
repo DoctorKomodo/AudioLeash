@@ -124,10 +124,18 @@ public sealed class AudioLeashContext : ApplicationContext
             graceTimer.Tick += (_, _) =>
             {
                 graceTimer.Stop();
-                _playbackPriority.EndStartupGrace();
-                _capturePriority.EndStartupGrace();
-                ReconcileDeviceState(DataFlow.Render);
-                ReconcileDeviceState(DataFlow.Capture);
+
+                // Only the flows that began grace: legacy flows must not be touched.
+                if (playbackGrace)
+                {
+                    _playbackPriority.EndStartupGrace();
+                    ReconcileDeviceState(DataFlow.Render);
+                }
+                if (captureGrace)
+                {
+                    _capturePriority.EndStartupGrace();
+                    ReconcileDeviceState(DataFlow.Capture);
+                }
             };
             _startupGraceTimer = graceTimer;
             graceTimer.Start();
@@ -255,15 +263,34 @@ public sealed class AudioLeashContext : ApplicationContext
         // ── Actions ─────────────────────────────────────────────────────
         _contextMenu.Items.Add(new ToolStripSeparator());
 
-        var clearItem = new ToolStripMenuItem("Clear Selection  (disable auto-restore)")
-        {
-            Enabled = _selection.SelectedDeviceId is not null
-                   || _captureSelection.SelectedDeviceId is not null,
-        };
-        clearItem.Click += ClearSelection_Click;
-        _contextMenu.Items.Add(clearItem);
+        bool anyOverride = _playbackPriority.OverrideId is not null
+                        || _capturePriority.OverrideId is not null;
+        bool anyLegacy   = !_playbackPriority.IsPriorityMode || !_capturePriority.IsPriorityMode;
 
-        _contextMenu.Items.Add(new ToolStripSeparator());
+        if (anyOverride)
+        {
+            var returnItem = new ToolStripMenuItem("Return to priority order");
+            returnItem.Click += ReturnToPriority_Click;
+            _contextMenu.Items.Add(returnItem);
+        }
+
+        if (anyLegacy)
+        {
+            var clearItem = new ToolStripMenuItem("Clear Selection  (disable auto-restore)")
+            {
+                Enabled = (!_playbackPriority.IsPriorityMode && _selection.SelectedDeviceId is not null)
+                       || (!_capturePriority.IsPriorityMode && _captureSelection.SelectedDeviceId is not null),
+            };
+            clearItem.Click += ClearSelection_Click;
+            _contextMenu.Items.Add(clearItem);
+        }
+
+        if (anyOverride || anyLegacy)
+            _contextMenu.Items.Add(new ToolStripSeparator());
+
+        var settingsItem = new ToolStripMenuItem("Settings…");
+        settingsItem.Click += OpenSettings_Click;
+        _contextMenu.Items.Add(settingsItem);
 
         var startupItem = new ToolStripMenuItem("Start with Windows")
         {
@@ -303,6 +330,13 @@ public sealed class AudioLeashContext : ApplicationContext
         catch (System.Runtime.InteropServices.COMException) { /* no default device for this flow */ }
         string? defaultId = defaultDevice?.ID;
         defaultDevice?.Dispose();
+
+        var priority = PriorityFor(flow);
+        if (priority.IsPriorityMode)
+        {
+            AddPriorityDevices(flow, priority, devices, defaultId);
+            return;
+        }
 
         if (devices.Count == 0 && !(selection.SelectedDeviceId is not null && !selection.IsDeviceAvailable))
         {
@@ -347,10 +381,64 @@ public sealed class AudioLeashContext : ApplicationContext
         }
     }
 
+    /// <summary>
+    /// Adds the device lines for a priority-mode flow: rank and manual markers, a check on
+    /// the enforced target or override, and a grayed entry for an override that isn't active
+    /// (startup grace). The menu items take ownership of the <paramref name="devices"/> via their tags.
+    /// </summary>
+    private void AddPriorityDevices(
+        DataFlow flow, PriorityState priority, List<MMDevice> devices, string? defaultId)
+    {
+        string? targetId   = priority.TargetId;
+        string? overrideId = priority.OverrideId;
+
+        bool showUnavailable = overrideId is not null && !devices.Any(d => d.ID == overrideId);
+
+        if (devices.Count == 0 && !showUnavailable)
+            _contextMenu.Items.Add(new ToolStripMenuItem("No devices available") { Enabled = false });
+
+        foreach (var device in devices)
+        {
+            bool isTarget   = targetId == device.ID;
+            bool isOverride = overrideId == device.ID;
+
+            string label = device.FriendlyName;
+            if (priority.RankOf(device.ID) is { } rank) label += $"  #{rank}";
+            if (isOverride) label += "  (manual)";
+            if (defaultId == device.ID && !isTarget) label += "  (Windows default)";
+
+            var menuItem = new ToolStripMenuItem(label)
+            {
+                Tag     = (device, flow),
+                Checked = isTarget || isOverride,
+            };
+            menuItem.Click += DeviceMenuItem_Click;
+            _contextMenu.Items.Add(menuItem);
+        }
+
+        if (showUnavailable)
+        {
+            string unavailableName = (flow == DataFlow.Render ? _savedPlaybackDeviceName : _savedCaptureDeviceName)
+                                     ?? "Unknown Device";
+            _contextMenu.Items.Add(new ToolStripMenuItem($"{unavailableName}  (unavailable)")
+            {
+                Checked = true,
+                Enabled = false,
+            });
+        }
+    }
+
     private void DeviceMenuItem_Click(object? sender, EventArgs e)
     {
         if (sender is not ToolStripMenuItem menuItem) return;
         if (menuItem.Tag is not (MMDevice device, DataFlow flow)) return;
+
+        var priority = PriorityFor(flow);
+        if (priority.IsPriorityMode)
+        {
+            PickPriorityDevice(flow, priority, device.ID, device.FriendlyName);
+            return;
+        }
 
         var selection = flow == DataFlow.Render ? _selection : _captureSelection;
 
@@ -396,13 +484,100 @@ public sealed class AudioLeashContext : ApplicationContext
         }
     }
 
+    /// <summary>
+    /// Priority-mode manual pick: the device becomes the override (and enforced target), the
+    /// default is switched to it, and the pick is persisted so a restart keeps it.
+    /// </summary>
+    private void PickPriorityDevice(DataFlow flow, PriorityState priority, string deviceId, string deviceName)
+    {
+        try
+        {
+            // Commit the override first so the default-change notification caused by the switch
+            // below already matches the target; SetDefaultIfNeeded also raises IsInternalChange.
+            priority.StartOverride(deviceId);
+            SetDefaultIfNeeded(flow, priority, deviceId);
+
+            if (flow == DataFlow.Render)
+            {
+                _savedPlaybackDeviceName = deviceName;
+                _settingsService.SaveSelectedPlaybackDevice(deviceId, deviceName);
+            }
+            else
+            {
+                _savedCaptureDeviceName = deviceName;
+                _settingsService.SaveSelectedCaptureDevice(deviceId, deviceName);
+            }
+
+            UpdateTrayTooltip();
+
+            _trayIcon.ShowBalloonTip(
+                timeout:  2500,
+                tipTitle: "Manual Device Selected",
+                tipText:  $"{deviceName}\n\nAudioLeash stays on it until you return to priority order or it disconnects.",
+                tipIcon:  ToolTipIcon.Info);
+
+            RefreshDeviceList();
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Could not set device:\n{ex.Message}");
+        }
+    }
+
+    /// <summary>Ends every priority-mode override and resumes the ranked order. No balloon.</summary>
+    private void ReturnToPriority_Click(object? sender, EventArgs e)
+    {
+        foreach (var flow in new[] { DataFlow.Render, DataFlow.Capture })
+        {
+            var priority = PriorityFor(flow);
+            if (!priority.IsPriorityMode || priority.OverrideId is null) continue;
+
+            try
+            {
+                string? targetId = priority.ReturnToPriority(GetActiveIds(flow));
+
+                if (flow == DataFlow.Render)
+                {
+                    _savedPlaybackDeviceName = null;
+                    _settingsService.SaveSelectedPlaybackDevice(null, null);
+                }
+                else
+                {
+                    _savedCaptureDeviceName = null;
+                    _settingsService.SaveSelectedCaptureDevice(null, null);
+                }
+
+                if (targetId is not null)
+                    SetDefaultIfNeeded(flow, priority, targetId);
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Could not return to priority order:\n{ex.Message}");
+            }
+        }
+
+        UpdateTrayTooltip();
+        RefreshDeviceList();
+    }
+
+    /// <summary>Placeholder; the settings window is wired up separately.</summary>
+    private void OpenSettings_Click(object? sender, EventArgs e) { }
+
     private void ClearSelection_Click(object? sender, EventArgs e)
     {
-        _selection.ClearSelection();
-        _captureSelection.ClearSelection();
-        _savedPlaybackDeviceName = null;
-        _savedCaptureDeviceName = null;
-        _settingsService.SaveSelectedDeviceIds(null, null);
+        // Legacy flows only: a priority-mode flow is released via "Return to priority order".
+        if (!_playbackPriority.IsPriorityMode)
+        {
+            _selection.ClearSelection();
+            _savedPlaybackDeviceName = null;
+            _settingsService.SaveSelectedPlaybackDevice(null, null);
+        }
+        if (!_capturePriority.IsPriorityMode)
+        {
+            _captureSelection.ClearSelection();
+            _savedCaptureDeviceName = null;
+            _settingsService.SaveSelectedCaptureDevice(null, null);
+        }
         UpdateTrayTooltip();
 
         _trayIcon.ShowBalloonTip(
@@ -489,6 +664,11 @@ public sealed class AudioLeashContext : ApplicationContext
                     {
                         try
                         {
+                            // restoreId was snapshotted on the audio thread; the user may have
+                            // changed the enforced device since. Skip a stale restore.
+                            string? enforcedId = isPriorityMode ? priority.TargetId : selection.SelectedDeviceId;
+                            if (enforcedId != restoreId) return;
+
                             _policyConfig.SetDefaultEndpoint(restoreId);
 
                             // Keep the committed availability in sync with this immediate
@@ -862,8 +1042,8 @@ public sealed class AudioLeashContext : ApplicationContext
 
     private void UpdateTrayTooltip()
     {
-        string? playbackName = FormatDeviceTooltip(_selection);
-        string? captureName  = FormatDeviceTooltip(_captureSelection);
+        string? playbackName = FormatDeviceTooltip(DataFlow.Render);
+        string? captureName  = FormatDeviceTooltip(DataFlow.Capture);
 
         string text;
         if (playbackName is null && captureName is null)
@@ -878,13 +1058,30 @@ public sealed class AudioLeashContext : ApplicationContext
         _trayIcon.Text = text.Length > 63 ? text[..62] + "…" : text;
     }
 
-    private string? FormatDeviceTooltip(DeviceSelectionState selection)
+    private string? FormatDeviceTooltip(DataFlow flow)
     {
+        var priority = PriorityFor(flow);
+        if (priority.IsPriorityMode)
+        {
+            string? targetId = priority.TargetId;
+            if (targetId is null)
+            {
+                // Only a persisted override that hasn't enumerated yet is worth showing.
+                if (!priority.InStartupGrace) return null;
+                string? graceName = flow == DataFlow.Render ? _savedPlaybackDeviceName : _savedCaptureDeviceName;
+                return $"{graceName ?? "Unknown"} (waiting)";
+            }
+
+            string targetName = ResolvePriorityName(priority, targetId);
+            return priority.OverrideId == targetId ? $"{targetName} (manual)" : targetName;
+        }
+
+        var selection = SelectionFor(flow);
         if (selection.SelectedDeviceId is null) return null;
         string? name = GetDeviceName(selection.SelectedDeviceId);
         if (name is null)
         {
-            string? savedName = selection == _selection
+            string? savedName = flow == DataFlow.Render
                 ? _savedPlaybackDeviceName
                 : _savedCaptureDeviceName;
             if (savedName is null) return "Unknown (waiting)";
