@@ -1,7 +1,7 @@
 # Device Priority: Design
 
 **Date:** 2026-10-17
-**Status:** Draft, awaiting approval
+**Status:** Approved
 
 ## Intent
 

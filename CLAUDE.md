@@ -70,6 +70,7 @@ AudioLeash/
 
 - Core logic lives in `AudioLeashContext.cs`. `DeviceSelectionState.cs` and `PolicyConfigClient.cs` are intentional splits: the former enables unit testing of pure logic; the latter isolates COM interop.
 - `DeviceSelectionState.IsInternalChange` (volatile) prevents feedback loops when the app itself triggers a device change.
+- `PriorityState.cs` is a pure, unit-testable state machine for ranked priority and manual override (with its own `IsInternalChange` loop guard); `PriorityListEditor.cs` is the pure logic behind the settings window.
 - The user-selected device is persisted to `%AppData%\AudioLeash\settings.json` via `SettingsService` and restored on startup.
 
 ---

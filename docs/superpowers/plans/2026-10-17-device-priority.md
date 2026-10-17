@@ -471,3 +471,8 @@ git add AudioLeash/SettingsForm.cs AudioLeash/PriorityListControl.cs AudioLeash/
 git commit -m "feat: add settings window for ranking devices"
 git push
 ```
+
+## Post-review changes
+
+- Task 6 specified `notify: true` when applying the priority decision on Save. Overruled after final review: the outcome balloons misdescribed list edits (for example "higher priority" when nothing switched). Save now applies the decision silently and shows one neutral "Now using X (priority order)" balloon only if the Windows default actually changed.
+- The ranked list and the persisted pick are saved in one write (`SettingsService.SavePlaybackFlow` / `SaveCaptureFlow`) instead of two, so a partial write cannot resurrect a stale legacy pick.
