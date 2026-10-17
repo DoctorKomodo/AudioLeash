@@ -122,6 +122,7 @@ AudioLeash/
 │   ├── UnderlineTabStrip.cs         ← Flat underline tabs used by the settings window
 │   ├── ThemedControls.cs            ← Flat themed styling for buttons in the settings window
 │   ├── PolicyConfigClient.cs        ← COM interop: sets Windows default audio endpoint
+│   ├── SessionEndListener.cs        ← Exits on session end / installer Restart Manager close
 │   ├── SettingsService.cs           ← JSON settings persistence (%AppData%\AudioLeash\)
 │   ├── StartupService.cs            ← Windows Run-key startup registration
 │   ├── DarkMenuRenderer.cs          ← Dark mode context menu renderer
@@ -131,10 +132,12 @@ AudioLeash/
 │       └── icon.ico                 ← tray icon
 └── AudioLeash.Tests/
     ├── AudioLeash.Tests.csproj      ← xUnit + NSubstitute
+    ├── ClearSelectionMessageTests.cs
     ├── DeviceSelectionStateTests.cs
     ├── IconAssetTests.cs
     ├── PriorityListEditorTests.cs
     ├── PriorityStateTests.cs
+    ├── SessionEndListenerTests.cs
     ├── SettingsServiceTests.cs
     ├── StartupServiceTests.cs
     ├── TrayIconLoaderTests.cs
