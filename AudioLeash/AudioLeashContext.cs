@@ -28,6 +28,12 @@ public sealed class AudioLeashContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _renderDebounce;
     private readonly System.Windows.Forms.Timer _captureDebounce;
     private readonly SessionEndListener      _sessionEndListener;
+
+    /// <summary>
+    /// Set once the app starts exiting. Audio-thread callbacks then stop marshalling to the
+    /// UI thread, whose message loop is gone — see <see cref="SafeInvoke"/> and Dispose.
+    /// </summary>
+    private volatile bool _shuttingDown;
     private string?                          _savedPlaybackDeviceName;
     private string?                          _savedCaptureDeviceName;
 
@@ -625,7 +631,7 @@ public sealed class AudioLeashContext : ApplicationContext
 
     private void SafeInvoke(Action action)
     {
-        if (!_contextMenu.IsHandleCreated) return;
+        if (_shuttingDown || !_contextMenu.IsHandleCreated) return;
         try
         {
             if (_contextMenu.InvokeRequired)
@@ -699,6 +705,7 @@ public sealed class AudioLeashContext : ApplicationContext
 
     private void ExitApplication()
     {
+        _shuttingDown = true;
         _trayIcon.Visible = false;
         Application.Exit();
     }
@@ -707,8 +714,8 @@ public sealed class AudioLeashContext : ApplicationContext
     {
         if (disposing)
         {
+            _shuttingDown = true;
             WindowsTheme.Changed -= OnThemeChanged;
-            _enumerator.UnregisterEndpointNotificationCallback(_notificationClient);
 
             _renderDebounce.Stop();
             _captureDebounce.Stop();
@@ -729,7 +736,14 @@ public sealed class AudioLeashContext : ApplicationContext
             _sectionHeaderFont.Dispose();
             _sessionEndListener.Dispose();
             _trayIcon.Dispose();
+
+            // Destroy the menu's handle BEFORE unregistering the audio callback. Unregistering
+            // can wait for an in-flight callback, and that callback may be blocked in
+            // Control.Invoke on this (no longer pumping) thread — a deadlock that would stall
+            // the installer's Restart Manager. Destroying the handle fails any pending Invoke
+            // with ObjectDisposedException (caught in SafeInvoke), and _shuttingDown stops new ones.
             _contextMenu.Dispose();
+            _enumerator.UnregisterEndpointNotificationCallback(_notificationClient);
             _enumerator.Dispose();
         }
         base.Dispose(disposing);

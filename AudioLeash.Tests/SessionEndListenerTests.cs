@@ -14,8 +14,16 @@ public sealed class SessionEndListenerTests : IDisposable
     private const int WM_QUERYENDSESSION = 0x0011;
     private const int WM_ENDSESSION      = 0x0016;
 
+    private const int ENDSESSION_CLOSEAPP = 0x0001; // what the Restart Manager sends
+
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindow(IntPtr hWnd);
 
     private int _endCalls;
     private readonly SessionEndListener _listener;
@@ -45,5 +53,24 @@ public sealed class SessionEndListenerTests : IDisposable
         // wParam = FALSE: another app vetoed the shutdown; keep running.
         SendMessage(_listener.Handle, WM_ENDSESSION, IntPtr.Zero, IntPtr.Zero);
         Assert.Equal(0, _endCalls);
+    }
+
+    [Fact]
+    public void EndSession_FromRestartManager_InvokesCallback()
+    {
+        SendMessage(_listener.Handle, WM_ENDSESSION, (IntPtr)1, (IntPtr)ENDSESSION_CLOSEAPP);
+        Assert.Equal(1, _endCalls);
+    }
+
+    [Fact]
+    public void Window_IsNeverVisible()
+        => Assert.False(IsWindowVisible(_listener.Handle)); // keeps it out of Alt+Tab and the taskbar
+
+    [Fact]
+    public void Dispose_DestroysTheWindow()
+    {
+        IntPtr handle = _listener.Handle;
+        _listener.Dispose();
+        Assert.False(IsWindow(handle));
     }
 }
