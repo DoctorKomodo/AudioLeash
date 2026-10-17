@@ -27,6 +27,7 @@ public sealed class AudioLeashContext : ApplicationContext
     private readonly Font                    _sectionHeaderFont;
     private readonly System.Windows.Forms.Timer _renderDebounce;
     private readonly System.Windows.Forms.Timer _captureDebounce;
+    private readonly SessionEndListener      _sessionEndListener;
     private string?                          _savedPlaybackDeviceName;
     private string?                          _savedCaptureDeviceName;
 
@@ -63,6 +64,10 @@ public sealed class AudioLeashContext : ApplicationContext
             Visible          = true,
         };
         _trayIcon.MouseClick += TrayIcon_MouseClick;
+
+        // Exit when Windows ends the session — including when the installer's Restart
+        // Manager asks a running copy to close before an update (see SessionEndListener).
+        _sessionEndListener = new SessionEndListener(ExitApplication);
 
         // Force the ContextMenuStrip's HWND to be created now, before registering for
         // device-change notifications. Control.InvokeRequired returns false when
@@ -690,7 +695,9 @@ public sealed class AudioLeashContext : ApplicationContext
         catch (Exception) { return null; }
     }
 
-    private void Exit_Click(object? sender, EventArgs e)
+    private void Exit_Click(object? sender, EventArgs e) => ExitApplication();
+
+    private void ExitApplication()
     {
         _trayIcon.Visible = false;
         Application.Exit();
@@ -720,6 +727,7 @@ public sealed class AudioLeashContext : ApplicationContext
             }
 
             _sectionHeaderFont.Dispose();
+            _sessionEndListener.Dispose();
             _trayIcon.Dispose();
             _contextMenu.Dispose();
             _enumerator.Dispose();

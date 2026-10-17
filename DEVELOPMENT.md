@@ -114,6 +114,7 @@ AudioLeash/
 │   ├── AudioLeashContext.cs         ← All application logic (tray, menu, device events)
 │   ├── DeviceSelectionState.cs      ← Pure selection state machine (unit-testable)
 │   ├── PolicyConfigClient.cs        ← COM interop: sets Windows default audio endpoint
+│   ├── SessionEndListener.cs        ← Exits on session end / installer Restart Manager close
 │   ├── SettingsService.cs           ← JSON settings persistence (%AppData%\AudioLeash\)
 │   ├── StartupService.cs            ← Windows Run-key startup registration
 │   ├── DarkMenuRenderer.cs          ← Dark mode context menu renderer
@@ -125,6 +126,7 @@ AudioLeash/
     ├── AudioLeash.Tests.csproj      ← xUnit + NSubstitute
     ├── DeviceSelectionStateTests.cs
     ├── IconAssetTests.cs
+    ├── SessionEndListenerTests.cs
     ├── SettingsServiceTests.cs
     ├── StartupServiceTests.cs
     ├── TrayIconLoaderTests.cs
