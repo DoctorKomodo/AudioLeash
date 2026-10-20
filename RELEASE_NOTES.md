@@ -1,5 +1,19 @@
 # AudioLeash — Release Notes
 
+## v2.1.0
+
+This release adds **Keep devices awake**, for receivers and TVs that cut off the start of sounds.
+
+### New Features
+
+**Keep devices awake**
+- Some HDMI and S/PDIF receivers and TVs drop their audio link after a few seconds of quiet, so the start of the next sound is lost (Dolby Atmos to an AV receiver is a common case). AudioLeash can now keep the link awake by playing pure, inaudible digital silence.
+- Turn it on per device under **Settings… → Keep devices awake**. Changes apply immediately.
+- It runs only while that device is the Windows default, and follows the default as it changes.
+- It pauses while your PC is locked, the screen is off, or the PC is asleep.
+- Lightweight: it wakes about five times a second and uses no measurable CPU.
+- While it's running, Windows counts audio as playing, so the PC won't sleep on its own while it's unlocked with the screen on. Let the screen turn off first, or lock the PC.
+
 ## v2.0.0
 
 This release adds **device priority**: rank your devices and AudioLeash keeps the best one that's connected as your default. It also brings a settings window, a refreshed icon, and sharper rendering on high-DPI displays.

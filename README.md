@@ -26,7 +26,7 @@ AudioLeash lives in the system tray. **Click the tray icon** (left- or right-cli
 - **Lock your microphone** — pick a device under the **Recording** section. It's locked independently of playback.
 - **Spot a hijack** — if Windows has quietly switched away from your pick, the current default is labelled **(Windows default)** so you always know the real state.
 - **Clear Selection** — stop locking and let Windows manage devices on its own again. (With a priority list set up, **Return to priority order** takes its place — see below.)
-- **Settings…** — open the settings window to rank your devices (see [Device priority](#device-priority)).
+- **Settings…** — open the settings window to rank your devices (see [Device priority](#device-priority)) or keep them awake (see [Keep devices awake](#keep-devices-awake)).
 - **Start with Windows** — toggle launch-at-login on or off. Also available as a switch at the bottom of the settings window.
 - **Exit** — quit the app.
 
@@ -53,6 +53,17 @@ With a list in place, AudioLeash keeps the highest-ranked **connected** device a
 - **Return to priority order** — appears in the tray menu while a manual pick is in force; it drops the pick and switches straight to your top connected ranked device.
 - **No list, no change** — if you never rank anything, AudioLeash works exactly as described above. Clearing a list and saving makes whatever device is currently the default your locked device again.
 
+### Keep devices awake
+
+Some receivers and TVs drop their HDMI or S/PDIF audio link after a few seconds of quiet, so the start of the next sound gets cut off. Dolby Atmos from a PC to an AV receiver is a common example. AudioLeash can keep the link awake by playing pure digital silence to the device.
+
+- Open **Settings…**, choose **Keep devices awake**, and switch it on for each device that needs it. Changes apply immediately.
+- It runs only while that device is the Windows default playback device, and follows the default as it changes.
+- The silence is inaudible, and other apps' sound plays through it normally. While it's running, AudioLeash appears in the Windows volume mixer.
+- It pauses while your PC is locked, the screen is off, or the PC is asleep, and resumes afterwards.
+- **Sleep:** while it's running, Windows counts audio as playing, so the PC won't go to sleep on its own while it's unlocked and the screen is on. Set the screen to turn off before the PC sleeps, or lock the PC when you walk away.
+- Some hardware ignores pure silence and still drops the link. A mode that adds tiny, inaudible signal may come later.
+
 ---
 
 ## Features at a glance
@@ -62,6 +73,7 @@ With a list in place, AudioLeash keeps the highest-ranked **connected** device a
 - **Survives unplugging** — keeps your choice and reapplies it the moment the device returns.
 - **Device priority** — rank your devices and AudioLeash always uses the best one that's connected, switching up and falling back automatically.
 - **Manual override** — pick any device from the tray to hold it until you return to priority order or it disconnects.
+- **Keep devices awake** — plays inaudible silence to chosen devices while they're the default, so HDMI receivers and TVs don't cut off the start of sounds.
 - **Remembers across reboots** — your selection, priority lists and manual picks are saved and restored at startup.
 - **Dark mode** — the tray menu and settings window follow your Windows light/dark theme.
 - **Featherweight** — lives in the tray (plus a small settings window), and only ever one instance running.

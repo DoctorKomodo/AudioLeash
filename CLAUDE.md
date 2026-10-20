@@ -45,7 +45,12 @@ AudioLeash/
 │   ├── PriorityState.cs             ← Pure ranked-priority/override state machine (unit-testable)
 │   ├── PriorityListEditor.cs        ← Pure list-editing logic behind the settings window
 │   ├── PriorityListControl.cs       ← Owner-drawn ranked/unranked device list (settings window)
-│   ├── SettingsForm.cs              ← Settings window (Playback / Recording tabs, Start with Windows switch; applies on close)
+│   ├── SettingsForm.cs              ← Settings window (Playback / Recording tabs, Keep devices awake page, Start with Windows switch)
+│   ├── KeepAliveState.cs            ← Pure keep-alive decision logic: which device should stream (unit-testable)
+│   ├── KeepAliveRows.cs             ← Pure model behind the "Keep devices awake" page
+│   ├── KeepAliveStream.cs           ← Shared-mode WASAPI stream of silence on one device
+│   ├── SilenceWaveProvider.cs       ← Endless zero-filled IWaveProvider (keep-alive "Zero" mode)
+│   ├── KeepAlivePauseMonitor.cs     ← Hidden window reporting lock, display-off and suspend
 │   ├── ToggleSwitch.cs              ← Windows 11-style on/off switch used by the settings window
 │   ├── SettingsTheme.cs             ← Light/dark palette the settings window draws with
 │   ├── UnderlineTabStrip.cs         ← Flat underline tabs used by the settings window
@@ -64,10 +69,14 @@ AudioLeash/
     ├── ClearSelectionMessageTests.cs
     ├── DeviceSelectionStateTests.cs
     ├── IconAssetTests.cs
+    ├── KeepAlivePauseMonitorTests.cs
+    ├── KeepAliveRowsTests.cs
+    ├── KeepAliveStateTests.cs
     ├── PriorityListEditorTests.cs
     ├── PriorityStateTests.cs
     ├── SessionEndListenerTests.cs
     ├── SettingsServiceTests.cs
+    ├── SilenceWaveProviderTests.cs
     ├── StartupServiceTests.cs
     ├── TrayIconLoaderTests.cs
     └── WindowsThemeTests.cs
