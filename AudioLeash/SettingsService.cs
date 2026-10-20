@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 
@@ -78,13 +79,13 @@ public sealed class SettingsService
     /// </summary>
     public void SaveSelectedPlaybackDeviceId(string? id)
     {
-        var existing = LoadSettings();
-        SaveSettings(new AppSettings(
-            SelectedDeviceId: null,  // clear legacy field
-            SelectedPlaybackDeviceId: id,
-            SelectedCaptureDeviceId: existing?.SelectedCaptureDeviceId,
-            SelectedPlaybackDeviceName: id is null ? null : existing?.SelectedPlaybackDeviceName,
-            SelectedCaptureDeviceName: existing?.SelectedCaptureDeviceName));
+        var existing = LoadSettings() ?? Empty;
+        SaveSettings(existing with
+        {
+            SelectedDeviceId = null,  // clear legacy field
+            SelectedPlaybackDeviceId = id,
+            SelectedPlaybackDeviceName = id is null ? null : existing.SelectedPlaybackDeviceName,
+        });
     }
 
     /// <summary>
@@ -93,14 +94,14 @@ public sealed class SettingsService
     /// </summary>
     public void SaveSelectedCaptureDeviceId(string? id)
     {
-        var existing = LoadSettings();
-        SaveSettings(new AppSettings(
-            SelectedDeviceId: null,  // clear legacy field
-            SelectedPlaybackDeviceId: existing?.SelectedPlaybackDeviceId
-                                     ?? existing?.SelectedDeviceId,
-            SelectedCaptureDeviceId: id,
-            SelectedPlaybackDeviceName: existing?.SelectedPlaybackDeviceName,
-            SelectedCaptureDeviceName: id is null ? null : existing?.SelectedCaptureDeviceName));
+        var existing = LoadSettings() ?? Empty;
+        SaveSettings(existing with
+        {
+            SelectedDeviceId = null,  // clear legacy field
+            SelectedPlaybackDeviceId = existing.SelectedPlaybackDeviceId ?? existing.SelectedDeviceId,
+            SelectedCaptureDeviceId = id,
+            SelectedCaptureDeviceName = id is null ? null : existing.SelectedCaptureDeviceName,
+        });
     }
 
     /// <summary>
@@ -109,10 +110,14 @@ public sealed class SettingsService
     /// </summary>
     public void SaveSelectedDeviceIds(string? playbackId, string? captureId)
     {
-        SaveSettings(new AppSettings(
-            SelectedDeviceId: null,
-            SelectedPlaybackDeviceId: playbackId,
-            SelectedCaptureDeviceId: captureId));
+        SaveSettings((LoadSettings() ?? Empty) with
+        {
+            SelectedDeviceId = null,
+            SelectedPlaybackDeviceId = playbackId,
+            SelectedCaptureDeviceId = captureId,
+            SelectedPlaybackDeviceName = null,
+            SelectedCaptureDeviceName = null,
+        });
     }
 
     // ── Device name persistence ─────────────────────────────────────────
@@ -134,13 +139,12 @@ public sealed class SettingsService
     /// </summary>
     public void SaveSelectedPlaybackDevice(string? id, string? name)
     {
-        var existing = LoadSettings();
-        SaveSettings(new AppSettings(
-            SelectedDeviceId: null,
-            SelectedPlaybackDeviceId: id,
-            SelectedCaptureDeviceId: existing?.SelectedCaptureDeviceId,
-            SelectedPlaybackDeviceName: name,
-            SelectedCaptureDeviceName: existing?.SelectedCaptureDeviceName));
+        SaveSettings((LoadSettings() ?? Empty) with
+        {
+            SelectedDeviceId = null,
+            SelectedPlaybackDeviceId = id,
+            SelectedPlaybackDeviceName = name,
+        });
     }
 
     /// <summary>
@@ -148,17 +152,87 @@ public sealed class SettingsService
     /// </summary>
     public void SaveSelectedCaptureDevice(string? id, string? name)
     {
-        var existing = LoadSettings();
-        SaveSettings(new AppSettings(
-            SelectedDeviceId: null,
-            SelectedPlaybackDeviceId: existing?.SelectedPlaybackDeviceId
-                                     ?? existing?.SelectedDeviceId,
-            SelectedCaptureDeviceId: id,
-            SelectedPlaybackDeviceName: existing?.SelectedPlaybackDeviceName,
-            SelectedCaptureDeviceName: name));
+        var existing = LoadSettings() ?? Empty;
+        SaveSettings(existing with
+        {
+            SelectedDeviceId = null,
+            SelectedPlaybackDeviceId = existing.SelectedPlaybackDeviceId ?? existing.SelectedDeviceId,
+            SelectedCaptureDeviceId = id,
+            SelectedCaptureDeviceName = name,
+        });
+    }
+
+    // ── Device priority lists ───────────────────────────────────────────
+
+    /// <summary>Returns the ranked playback list (sanitized); empty if none is saved.</summary>
+    public IReadOnlyList<RankedDevice> LoadPlaybackPriority()
+        => Sanitize(LoadSettings()?.PlaybackPriority);
+
+    /// <summary>Returns the ranked capture list (sanitized); empty if none is saved.</summary>
+    public IReadOnlyList<RankedDevice> LoadCapturePriority()
+        => Sanitize(LoadSettings()?.CapturePriority);
+
+    /// <summary>Persists the ranked playback list, preserving all other fields.</summary>
+    public void SavePlaybackPriority(IReadOnlyList<RankedDevice> list)
+        => SaveSettings((LoadSettings() ?? Empty) with { PlaybackPriority = list });
+
+    /// <summary>Persists the ranked capture list, preserving all other fields.</summary>
+    public void SaveCapturePriority(IReadOnlyList<RankedDevice> list)
+        => SaveSettings((LoadSettings() ?? Empty) with { CapturePriority = list });
+
+    /// <summary>
+    /// Persists the ranked playback list and the playback pick (id and name) in a single
+    /// write, preserving the capture flow. Clears the legacy <c>SelectedDeviceId</c> field.
+    /// </summary>
+    public void SavePlaybackFlow(IReadOnlyList<RankedDevice> list, string? pickId, string? pickName)
+    {
+        SaveSettings((LoadSettings() ?? Empty) with
+        {
+            SelectedDeviceId = null,
+            SelectedPlaybackDeviceId = pickId,
+            SelectedPlaybackDeviceName = pickName,
+            PlaybackPriority = list,
+        });
+    }
+
+    /// <summary>
+    /// Persists the ranked capture list and the capture pick (id and name) in a single
+    /// write, preserving the playback flow. Migrates the legacy <c>SelectedDeviceId</c>
+    /// to the playback field if present.
+    /// </summary>
+    public void SaveCaptureFlow(IReadOnlyList<RankedDevice> list, string? pickId, string? pickName)
+    {
+        var existing = LoadSettings() ?? Empty;
+        SaveSettings(existing with
+        {
+            SelectedDeviceId = null,
+            SelectedPlaybackDeviceId = existing.SelectedPlaybackDeviceId ?? existing.SelectedDeviceId,
+            SelectedCaptureDeviceId = pickId,
+            SelectedCaptureDeviceName = pickName,
+            CapturePriority = list,
+        });
+    }
+
+    /// <summary>
+    /// Drops entries with a null/empty Id, keeps the first occurrence of each Id,
+    /// and replaces a null Name. JSON deserialization can yield nulls despite non-nullable types.
+    /// </summary>
+    private static IReadOnlyList<RankedDevice> Sanitize(IReadOnlyList<RankedDevice>? raw)
+    {
+        if (raw is null) return Array.Empty<RankedDevice>();
+        var seen = new HashSet<string>();
+        var result = new List<RankedDevice>();
+        foreach (var d in raw)
+        {
+            if (d is null || string.IsNullOrEmpty(d.Id) || !seen.Add(d.Id)) continue;
+            result.Add(string.IsNullOrEmpty(d.Name) ? d with { Name = "Unknown device" } : d);
+        }
+        return result;
     }
 
     // ── Internal helpers ────────────────────────────────────────────────
+
+    private static readonly AppSettings Empty = new(null, null, null);
 
     private AppSettings? LoadSettings()
     {
@@ -190,5 +264,7 @@ public sealed class SettingsService
         string? SelectedPlaybackDeviceId,
         string? SelectedCaptureDeviceId,
         string? SelectedPlaybackDeviceName = null,
-        string? SelectedCaptureDeviceName = null);
+        string? SelectedCaptureDeviceName = null,
+        IReadOnlyList<RankedDevice>? PlaybackPriority = null,
+        IReadOnlyList<RankedDevice>? CapturePriority = null);
 }

@@ -286,4 +286,115 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.Null(svc.LoadSelectedCaptureDeviceId());
         Assert.True(svc.HasSettingsFile);
     }
+
+    // ── Priority lists ──────────────────────────────────────────────────
+
+    [Fact]
+    public void LoadPlaybackPriority_WhenFileAbsent_ReturnsEmpty()
+        => Assert.Empty(Svc().LoadPlaybackPriority());
+
+    [Fact]
+    public void SavePlaybackPriority_RoundTripsOrderAndFields()
+    {
+        var svc = Svc();
+        var list = new[] { new RankedDevice("tv", "LG TV", "NVIDIA HDA"), new RankedDevice("hp", "Headphones") };
+        svc.SavePlaybackPriority(list);
+        Assert.Equal(list, svc.LoadPlaybackPriority());
+        Assert.Empty(svc.LoadCapturePriority());
+    }
+
+    [Fact]
+    public void SaveSelectedPlaybackDevice_PreservesPriorityLists()
+    {
+        var svc = Svc();
+        svc.SavePlaybackPriority(new[] { new RankedDevice("tv", "LG TV") });
+        svc.SaveCapturePriority(new[] { new RankedDevice("mic", "Headset Mic") });
+        svc.SaveSelectedPlaybackDevice("spk", "Speakers");
+        svc.SaveSelectedCaptureDevice("cam", "Webcam");
+        svc.SaveSelectedDeviceIds(null, null);
+        Assert.Single(svc.LoadPlaybackPriority());
+        Assert.Single(svc.LoadCapturePriority());
+    }
+
+    [Fact]
+    public void SavePlaybackPriority_PreservesSelections()
+    {
+        var svc = Svc();
+        svc.SaveSelectedPlaybackDevice("spk", "Speakers");
+        svc.SavePlaybackPriority(new[] { new RankedDevice("tv", "LG TV") });
+        Assert.Equal("spk", svc.LoadSelectedPlaybackDeviceId());
+        Assert.Equal("Speakers", svc.LoadSelectedPlaybackDeviceName());
+    }
+
+    [Fact]
+    public void SavePlaybackFlow_RoundTripsListAndPick()
+    {
+        var svc = Svc();
+        var list = new[] { new RankedDevice("tv", "LG TV"), new RankedDevice("hp", "Headphones") };
+        svc.SavePlaybackFlow(list, "spk", "Speakers");
+        Assert.Equal(list, svc.LoadPlaybackPriority());
+        Assert.Equal("spk", svc.LoadSelectedPlaybackDeviceId());
+        Assert.Equal("Speakers", svc.LoadSelectedPlaybackDeviceName());
+    }
+
+    [Fact]
+    public void SaveCaptureFlow_RoundTripsListAndPick()
+    {
+        var svc = Svc();
+        var list = new[] { new RankedDevice("mic", "Headset Mic") };
+        svc.SaveCaptureFlow(list, "line", "Line In");
+        Assert.Equal(list, svc.LoadCapturePriority());
+        Assert.Equal("line", svc.LoadSelectedCaptureDeviceId());
+        Assert.Equal("Line In", svc.LoadSelectedCaptureDeviceName());
+    }
+
+    [Fact]
+    public void SavePlaybackFlow_PreservesCaptureListAndSelection()
+    {
+        var svc = Svc();
+        svc.SaveCaptureFlow(new[] { new RankedDevice("mic", "Headset Mic") }, "line", "Line In");
+        svc.SavePlaybackFlow(new[] { new RankedDevice("tv", "LG TV") }, null, null);
+        Assert.Single(svc.LoadCapturePriority());
+        Assert.Equal("line", svc.LoadSelectedCaptureDeviceId());
+        Assert.Equal("Line In", svc.LoadSelectedCaptureDeviceName());
+        Assert.Null(svc.LoadSelectedPlaybackDeviceId());
+    }
+
+    [Fact]
+    public void SaveCaptureFlow_PreservesPlaybackListAndSelection()
+    {
+        var svc = Svc();
+        svc.SavePlaybackFlow(new[] { new RankedDevice("tv", "LG TV") }, "spk", "Speakers");
+        svc.SaveCaptureFlow(Array.Empty<RankedDevice>(), null, null);
+        Assert.Single(svc.LoadPlaybackPriority());
+        Assert.Equal("spk", svc.LoadSelectedPlaybackDeviceId());
+        Assert.Equal("Speakers", svc.LoadSelectedPlaybackDeviceName());
+        Assert.Empty(svc.LoadCapturePriority());
+    }
+
+    [Fact]
+    public void LoadPlaybackPriority_LegacyFileWithoutField_ReturnsEmptyAndKeepsSelection()
+    {
+        Directory.CreateDirectory(_tempDir);
+        File.WriteAllText(Path.Combine(_tempDir, "settings.json"),
+            """{ "selectedPlaybackDeviceId": "spk" }""");
+        var svc = Svc();
+        Assert.Empty(svc.LoadPlaybackPriority());
+        Assert.Equal("spk", svc.LoadSelectedPlaybackDeviceId());
+    }
+
+    [Fact]
+    public void LoadPlaybackPriority_DropsEmptyIdsAndDuplicates()
+    {
+        Directory.CreateDirectory(_tempDir);
+        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), """
+            { "playbackPriority": [
+                { "id": "tv", "name": "LG TV" }, { "id": "", "name": "x" }, { "id": null, "name": "y" },
+                { "id": "tv", "name": "dup" },   { "id": "hp", "name": null } ] }
+            """);
+        var list = Svc().LoadPlaybackPriority();
+        Assert.Equal(new[] { "tv", "hp" }, list.Select(d => d.Id));
+        Assert.Equal("LG TV", list[0].Name);
+        Assert.Equal("Unknown device", list[1].Name);
+    }
 }

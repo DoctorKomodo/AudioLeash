@@ -27,8 +27,17 @@ static class Program
         if (!acquired)
             return; // Another instance is already running — exit silently.
 
+        // Per-monitor DPI awareness: without it Windows bitmap-stretches the tray menu (blurry)
+        // on any display above 100% scaling. Must be set before the first window is created.
+        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+
+        // Follow the Windows light/dark theme in the settings window. The tray menu sets
+        // its own renderer (DarkMenuRenderer), so it is unaffected. Experimental since .NET 9.
+#pragma warning disable WFO5001
+        Application.SetColorMode(SystemColorMode.System);
+#pragma warning restore WFO5001
         Application.Run(new AudioLeashContext());
     }
 }

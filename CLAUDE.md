@@ -41,7 +41,17 @@ AudioLeash/
 │   ├── Program.cs                   ← Entry point; STA thread, WinForms bootstrap
 │   ├── AudioLeashContext.cs         ← All application logic (tray, menu, device events)
 │   ├── DeviceSelectionState.cs      ← Pure selection state machine (unit-testable)
+│   ├── RankedDevice.cs              ← One entry in a ranked priority list (id + cached name)
+│   ├── PriorityState.cs             ← Pure ranked-priority/override state machine (unit-testable)
+│   ├── PriorityListEditor.cs        ← Pure list-editing logic behind the settings window
+│   ├── PriorityListControl.cs       ← Owner-drawn ranked/unranked device list (settings window)
+│   ├── SettingsForm.cs              ← Settings window (Playback / Recording tabs, Start with Windows switch; applies on close)
+│   ├── ToggleSwitch.cs              ← Windows 11-style on/off switch used by the settings window
+│   ├── SettingsTheme.cs             ← Light/dark palette the settings window draws with
+│   ├── UnderlineTabStrip.cs         ← Flat underline tabs used by the settings window
+│   ├── ThemedControls.cs            ← Flat themed styling for buttons in the settings window
 │   ├── PolicyConfigClient.cs        ← COM interop: sets Windows default audio endpoint
+│   ├── SessionEndListener.cs        ← Exits on session end / installer Restart Manager close
 │   ├── SettingsService.cs           ← JSON settings persistence (%AppData%\AudioLeash\)
 │   ├── StartupService.cs            ← Windows Run-key startup registration
 │   ├── DarkMenuRenderer.cs          ← Dark mode context menu renderer
@@ -51,8 +61,12 @@ AudioLeash/
 │       └── icon.ico                 ← tray icon
 └── AudioLeash.Tests/
     ├── AudioLeash.Tests.csproj      ← xUnit + NSubstitute
+    ├── ClearSelectionMessageTests.cs
     ├── DeviceSelectionStateTests.cs
     ├── IconAssetTests.cs
+    ├── PriorityListEditorTests.cs
+    ├── PriorityStateTests.cs
+    ├── SessionEndListenerTests.cs
     ├── SettingsServiceTests.cs
     ├── StartupServiceTests.cs
     ├── TrayIconLoaderTests.cs
@@ -63,8 +77,8 @@ AudioLeash/
 
 - Core logic lives in `AudioLeashContext.cs`. `DeviceSelectionState.cs` and `PolicyConfigClient.cs` are intentional splits: the former enables unit testing of pure logic; the latter isolates COM interop.
 - `DeviceSelectionState.IsInternalChange` (volatile) prevents feedback loops when the app itself triggers a device change.
+- `PriorityState.cs` is a pure, unit-testable state machine for ranked priority and manual override (with its own `IsInternalChange` loop guard); `PriorityListEditor.cs` is the pure logic behind the settings window.
 - The user-selected device is persisted to `%AppData%\AudioLeash\settings.json` via `SettingsService` and restored on startup.
-- **Known race condition**: `OnDefaultDeviceChanged` reads `SelectedDeviceId` twice on the audio thread without a lock. If the user clicks "Clear Selection" between reads, `restoreId` could be null despite the `!` assertion. The inner `try/catch` handles this gracefully, but a proper fix would snapshot under a lock.
 
 ---
 

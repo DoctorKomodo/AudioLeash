@@ -47,13 +47,13 @@ python tools/generate-icon.py           # rewrites AudioLeash/Resources/icon.ico
 python tools/generate-icon.py --preview # also dumps PNGs to build/icon-preview/
 ```
 
-The script renders six frames (16, 32, 48, 64, 128, 256). The 16px and 32px frames are drawn from **simplified geometry** — a thicker carabiner, no gate detail, coordinates snapped to whole device pixels — rather than downscaled from a large master. A hairline ring shrunk to 16px dissolves into grey mush, which is exactly what the previous icon did.
+The script renders nine frames (16, 20, 24, 32, 40, 48, 64, 128, 256); 20, 24 and 40 are the tray icon at 125%, 150% and 250% scaling, since the app is per-monitor DPI aware. Frames up to 32px are drawn from **simplified geometry** — a square 1px-wall hook instead of the curved stroked one, coordinates snapped to whole device pixels — rather than downscaled from a large master. A curved hairline hook shrunk to 16px dissolves into grey mush.
 
-The ring keeps its inner cutout even at 16px: a solid pill at that size is indistinguishable from a vertical bar. What carries legibility in the tray is the 1px gap between the speaker and the ring, which keeps them as two separate masses.
+The hook keeps its inner cutout and open left side even at 16px: a solid block there is indistinguishable from a vertical bar. What carries legibility in the tray is the 1px gaps between the speaker, the leash bar and the hook, which keep them as three separate masses. The hook's corners are square at small sizes because rounded 1px walls break into diagonal-only fragments.
 
-`IconAssetTests` enforces that. It decodes the shipped 16px frame and asserts it resolves into **exactly two bright masses** — the speaker and the ring — with at least 20 near-white pixels. Regenerating with `SIMPLIFIED_UP_TO = 0`, so every frame comes from the full hairline geometry, produces five fragmented masses and eight near-white pixels, and the tests fail. Do not relax those bounds to make a red test green; they mean the artwork regressed.
+`IconAssetTests` enforces that. It decodes the shipped 16px frame and asserts it resolves into **exactly three bright masses** — the speaker, the leash bar and the hook — with at least 20 near-white pixels. Regenerating with `SIMPLIFIED_UP_TO = 0`, so every frame comes from the full hairline geometry, produces fragmented masses and few near-white pixels, and the tests fail. Do not relax those bounds to make a red test green; they mean the artwork regressed.
 
-The tile geometry (corner radius 15.3% of width, vertical gradient, white glyph at ~54% width) is shared with the AudioStreamer icon so the two apps read as a family. AudioLeash's gradient is `#22C3DE` → `#0E7C96`.
+The tile geometry (corner radius 15.3% of width, vertical gradient, white glyph spanning ~72% of the width) is shared with the AudioStreamer icon so the two apps read as a family. AudioLeash's gradient is `#22C3DE` → `#0E7C96`.
 
 The generator is deterministic: re-running it on an unchanged script reproduces the committed `.ico` byte-for-byte with the same Pillow version. That has only been verified within a single Pillow version — a Pillow upgrade could change its PNG encoder's output bytes without changing the rendered pixels.
 
@@ -113,7 +113,17 @@ AudioLeash/
 │   ├── Program.cs                   ← Entry point; STA thread, WinForms bootstrap
 │   ├── AudioLeashContext.cs         ← All application logic (tray, menu, device events)
 │   ├── DeviceSelectionState.cs      ← Pure selection state machine (unit-testable)
+│   ├── RankedDevice.cs              ← One entry in a ranked priority list (id + cached name)
+│   ├── PriorityState.cs             ← Pure ranked-priority/override state machine (unit-testable)
+│   ├── PriorityListEditor.cs        ← Pure list-editing logic behind the settings window
+│   ├── PriorityListControl.cs       ← Owner-drawn ranked/unranked device list (settings window)
+│   ├── SettingsForm.cs              ← Settings window (Playback / Recording tabs, Start with Windows switch; applies on close)
+│   ├── ToggleSwitch.cs              ← Windows 11-style on/off switch used by the settings window
+│   ├── SettingsTheme.cs             ← Light/dark palette the settings window draws with
+│   ├── UnderlineTabStrip.cs         ← Flat underline tabs used by the settings window
+│   ├── ThemedControls.cs            ← Flat themed styling for buttons in the settings window
 │   ├── PolicyConfigClient.cs        ← COM interop: sets Windows default audio endpoint
+│   ├── SessionEndListener.cs        ← Exits on session end / installer Restart Manager close
 │   ├── SettingsService.cs           ← JSON settings persistence (%AppData%\AudioLeash\)
 │   ├── StartupService.cs            ← Windows Run-key startup registration
 │   ├── DarkMenuRenderer.cs          ← Dark mode context menu renderer
@@ -123,8 +133,12 @@ AudioLeash/
 │       └── icon.ico                 ← tray icon
 └── AudioLeash.Tests/
     ├── AudioLeash.Tests.csproj      ← xUnit + NSubstitute
+    ├── ClearSelectionMessageTests.cs
     ├── DeviceSelectionStateTests.cs
     ├── IconAssetTests.cs
+    ├── PriorityListEditorTests.cs
+    ├── PriorityStateTests.cs
+    ├── SessionEndListenerTests.cs
     ├── SettingsServiceTests.cs
     ├── StartupServiceTests.cs
     ├── TrayIconLoaderTests.cs
@@ -137,11 +151,13 @@ AudioLeash/
 - `IMMNotificationClient` callbacks arrive on a Windows COM audio thread and are marshalled back to the UI/STA thread via `SafeInvoke` before touching any UI.
 - `DeviceSelectionState.IsInternalChange` (volatile) prevents feedback loops where the app's own device switch would otherwise re-trigger the change handler.
 - **Debounced device-state handling** — connect/disconnect events for the selected device don't act immediately. `OnDeviceStateChanged` (and the `Suspend` branch of `OnDefaultDeviceChanged`) re-arm a per-flow `System.Windows.Forms.Timer` (`DebounceMs`, 1000 ms). Only once the endpoint stops flapping does `ReconcileDeviceState` re-query the device's actual availability and call `DeviceSelectionState.EvaluateSettledState`, which returns a single `SettledOutcome` reflecting the net change. This collapses rapid flapping (e.g. an HDMI/eARC handshake) into at most one notification — a flap that ends back on the selected device restores it silently. The immediate `Restore` (leash-yank) path in `OnDefaultDeviceChanged` is unaffected and stays snappy.
+- **Legacy vs. priority mode (per flow)** — a flow with an empty ranked list runs in legacy mode: `DeviceSelectionState` enforces the single pick exactly as before. A non-empty list switches the flow to priority mode, driven by `PriorityState`: the target is the highest-ranked connected device, or the manual override while one is in force. `PriorityState` guards its fields with a lock because the audio thread reads them in `EvaluateDefaultChange`; the debounced reconcile calls `EvaluateSettled`, whose `PriorityOutcome` drives one balloon at most. Ranked lists are stored as `PlaybackPriority` / `CapturePriority` (with cached names, so absent devices still display).
+- **The override reuses the `Selected*` fields** — in priority mode, `SelectedPlaybackDeviceId` / `SelectedCaptureDeviceId` (and their names) hold the persisted manual override instead of the legacy pick, so a restart restores it (under a short startup grace period). When the settings window saves a mode change, `PriorityState.PlanPersistedPick` decides what those fields hold: legacy → priority clears them, priority → priority keeps the override, priority → legacy pins the current Windows default as the new legacy pick.
 - The user-selected device (ID and friendly name) is persisted to `%AppData%\AudioLeash\settings.json` via `SettingsService` and restored on startup.
 
 ## Known Issues
 
-- **`SelectedDeviceId` race condition** — `OnDefaultDeviceChanged` reads `SelectedDeviceId` twice on the audio thread (once inside `EvaluateDefaultChange`, once to capture `restoreId`) with no lock between them. If the user clicks "Clear Selection" on the UI thread in that gap, `restoreId` will be `null` despite the `!` assertion. Extremely unlikely in practice, and the inner `try`/`catch` handles the resulting exception gracefully, but a proper fix would snapshot `SelectedDeviceId` once under a lock and pass the snapshot through.
+- None currently tracked.
 
 ## Roadmap
 
@@ -155,4 +171,4 @@ Ideas for future development, roughly in order of interest:
 
 ### Already shipped
 
-Windows-startup toggle · recording-device support · settings persistence · tray tooltip · dark-mode menu · single-instance enforcement · persistent selection for unavailable devices.
+Windows-startup toggle · recording-device support · settings persistence · tray tooltip · dark-mode menu · single-instance enforcement · persistent selection for unavailable devices · device priority.

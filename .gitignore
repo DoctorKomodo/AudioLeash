@@ -60,3 +60,6 @@ desktop.ini
 
 # Icon preview renders from tools/generate-icon.py
 build/
+
+# Superpowers brainstorming/session artifacts
+.superpowers/

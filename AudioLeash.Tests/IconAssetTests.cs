@@ -66,11 +66,13 @@ public class IconAssetTests
         (0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B) / 255.0;
 
     [Fact]
-    public void Icon_ContainsAllSixSizes()
+    public void Icon_ContainsEveryTrayAndShellSize()
     {
         int[] sizes = ReadFrames().Select(f => f.Width).OrderBy(w => w).ToArray();
 
-        Assert.Equal(new[] { 16, 32, 48, 64, 128, 256 }, sizes);
+        // 20, 24 and 40 are the tray icon at 125%, 150% and 250% scaling (the app is
+        // per-monitor DPI aware); without them Windows stretches the nearest smaller frame.
+        Assert.Equal(new[] { 16, 20, 24, 32, 40, 48, 64, 128, 256 }, sizes);
     }
 
     /// <summary>
@@ -106,23 +108,23 @@ public class IconAssetTests
     }
 
     /// <summary>
-    /// The glyph resolves into exactly two bright masses — the speaker and the
-    /// carabiner ring. If they merge, the icon reads as one blob; if it
-    /// fragments into more, the artwork has dissolved (regenerating with
-    /// SIMPLIFIED_UP_TO = 0 yields 5 fragmented masses instead of 2).
+    /// The glyph resolves into exactly three bright masses — the speaker, the
+    /// leash bar and the carabiner hook. If they merge, the icon reads as one
+    /// blob; if it fragments into more, the artwork has dissolved (rounded 1px
+    /// hook walls at 16px yield 7 fragments instead of 3).
     /// </summary>
     [Fact]
-    public void SmallFrame_ResolvesIntoExactlyTwoMasses()
+    public void SmallFrame_ResolvesIntoExactlyThreeMasses()
     {
         using Bitmap frame = Decode(ReadFrames().Single(f => f.Width == 16));
 
-        Assert.Equal(2, CountBrightMasses(frame));
+        Assert.Equal(3, CountBrightMasses(frame));
     }
 
     /// <summary>
     /// Flood-fills the bright (glyph) pixels into 4-connected components. The
-    /// speaker and the ring must remain two separate masses: if they merge the
-    /// icon reads as one blob, and if they fragment it has dissolved.
+    /// speaker, leash bar and hook must remain three separate masses: if they
+    /// merge the icon reads as one blob, and if they fragment it has dissolved.
     /// </summary>
     private static int CountBrightMasses(Bitmap frame)
     {
