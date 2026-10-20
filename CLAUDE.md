@@ -48,6 +48,7 @@ AudioLeash/
 │   ├── SettingsForm.cs              ← Settings window (Playback / Recording tabs, Keep devices awake page, Start with Windows switch)
 │   ├── KeepAliveState.cs            ← Pure keep-alive decision logic: which device should stream (unit-testable)
 │   ├── KeepAliveRows.cs             ← Pure model behind the "Keep devices awake" page
+│   ├── KeepAliveController.cs       ← Keeps at most one keep-alive stream matching the state (re-entrancy safe, unit-testable)
 │   ├── KeepAliveStream.cs           ← Shared-mode WASAPI stream of silence on one device
 │   ├── SilenceWaveProvider.cs       ← Endless zero-filled IWaveProvider (keep-alive "Zero" mode)
 │   ├── KeepAlivePauseMonitor.cs     ← Hidden window reporting lock, display-off and suspend
@@ -69,6 +70,7 @@ AudioLeash/
     ├── ClearSelectionMessageTests.cs
     ├── DeviceSelectionStateTests.cs
     ├── IconAssetTests.cs
+    ├── KeepAliveControllerTests.cs
     ├── KeepAlivePauseMonitorTests.cs
     ├── KeepAliveRowsTests.cs
     ├── KeepAliveStateTests.cs

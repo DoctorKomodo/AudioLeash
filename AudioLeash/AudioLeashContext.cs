@@ -32,11 +32,10 @@ public sealed class AudioLeashContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _captureDebounce;
     private readonly System.Windows.Forms.Timer? _startupGraceTimer;
     private readonly SessionEndListener      _sessionEndListener;
-    private readonly KeepAliveState          _keepAlive;
+    private readonly KeepAliveController     _keepAlive;
     private readonly KeepAlivePauseMonitor   _pauseMonitor;
     private readonly System.Windows.Forms.Timer _keepAliveCoalesce;
     private readonly System.Windows.Forms.Timer _keepAliveRetry;
-    private KeepAliveStream?                 _keepAliveStream;
 
     /// <summary>
     /// Set once the app starts exiting. Audio-thread callbacks then stop marshalling to the
@@ -107,9 +106,17 @@ public sealed class AudioLeashContext : ApplicationContext
         // hidden window that reports lock, display-off and suspend so the stream can pause.
         _keepAliveCoalesce = new System.Windows.Forms.Timer { Interval = KeepAliveCoalesceMs };
         _keepAliveRetry    = new System.Windows.Forms.Timer { Interval = KeepAliveRetryMs };
-        _keepAliveCoalesce.Tick += (_, _) => { _keepAliveCoalesce.Stop(); RefreshKeepAliveDefault(); };
-        _keepAliveRetry.Tick    += (_, _) => { _keepAliveRetry.Stop();    ReconcileKeepAlive(); };
-        _keepAlive    = new KeepAliveState([]);
+        _keepAlive = new KeepAliveController(
+            new KeepAliveState([]),
+            () => GetCurrentDefaultId(DataFlow.Render),
+            (id, onFaulted) => KeepAliveStream.TryStart(id, stream => OnKeepAliveFaulted(stream, onFaulted)),
+            armed =>
+            {
+                _keepAliveRetry.Stop();
+                if (armed) _keepAliveRetry.Start();
+            });
+        _keepAliveCoalesce.Tick += (_, _) => { _keepAliveCoalesce.Stop(); _keepAlive.RefreshDefault(); };
+        _keepAliveRetry.Tick    += (_, _) => { _keepAliveRetry.Stop();    _keepAlive.Reconcile(); };
         _pauseMonitor = new KeepAlivePauseMonitor(OnPauseSignal);
 
         // Force the ContextMenuStrip's HWND to be created now, before registering for
@@ -136,7 +143,7 @@ public sealed class AudioLeashContext : ApplicationContext
         _settingsService = new SettingsService();
         _startupService  = new StartupService();
         foreach (var device in _settingsService.LoadKeepAliveDevices())
-            _keepAlive.SetEnabled(device, true);
+            _keepAlive.State.SetEnabled(device, true);
 
         // Restore saved device selections (playback and capture).
         string? savedPlaybackId = _settingsService.LoadSelectedPlaybackDeviceId();
@@ -205,7 +212,7 @@ public sealed class AudioLeashContext : ApplicationContext
         }
 
         RefreshDeviceList();
-        RefreshKeepAliveDefault();
+        _keepAlive.RefreshDefault();
     }
 
     /// <summary>
@@ -637,7 +644,7 @@ public sealed class AudioLeashContext : ApplicationContext
         {
             playback  = CreatePriorityEditor(DataFlow.Render);
             capture   = CreatePriorityEditor(DataFlow.Capture);
-            keepAlive = KeepAliveRows.Build(EnumerateKnownDevices(DataFlow.Render), _keepAlive.Devices);
+            keepAlive = KeepAliveRows.Build(EnumerateKnownDevices(DataFlow.Render), _keepAlive.State.Devices);
         }
         catch (Exception ex)
         {
@@ -878,7 +885,7 @@ public sealed class AudioLeashContext : ApplicationContext
     private void OnDefaultDeviceChanged(DataFlow flow, string newDefaultId)
     {
         // Keep-alive follows the default playback device. Before any early return below.
-        if (flow == DataFlow.Render && _keepAlive.Devices.Count > 0)
+        if (flow == DataFlow.Render)
             ArmKeepAliveCoalesce();
 
         var selection = SelectionFor(flow);
@@ -1001,7 +1008,7 @@ public sealed class AudioLeashContext : ApplicationContext
     /// </remarks>
     private void OnDeviceStateChanged(string deviceId, DeviceState newState)
     {
-        if (_keepAlive.IsEnabled(deviceId))
+        if (_keepAlive.State.IsEnabled(deviceId))
             ArmKeepAliveCoalesce();
         if (_selection.SelectedDeviceId == deviceId || IsPriorityRelevant(DataFlow.Render, deviceId))
             ArmDebounce(DataFlow.Render);
@@ -1295,66 +1302,19 @@ public sealed class AudioLeashContext : ApplicationContext
             _keepAliveCoalesce.Start();
         });
 
-    /// <summary>Re-reads the default playback device and moves the keep-alive stream to match.</summary>
-    private void RefreshKeepAliveDefault()
-    {
-        _keepAlive.DefaultId = GetCurrentDefaultId(DataFlow.Render);
-        ReconcileKeepAlive();
-    }
-
     /// <summary>
-    /// Stops and/or starts the keep-alive stream so it matches <see cref="KeepAliveState.DesiredId"/>.
-    /// A start that fails is retried on <see cref="_keepAliveRetry"/> while it is still wanted.
+    /// Called on a keep-alive stream's playback thread when it stops unexpectedly. Uses
+    /// BeginInvoke, not <see cref="SafeInvoke"/>: the UI side disposes the stream, which joins
+    /// this very thread, so a synchronous Invoke would deadlock.
     /// </summary>
-    private void ReconcileKeepAlive()
-    {
-        if (_shuttingDown) return;
-
-        var plan = _keepAlive.Plan(_keepAliveStream?.DeviceId);
-        if (plan.StopCurrent)
-        {
-            _keepAliveStream?.Dispose();
-            _keepAliveStream = null;
-        }
-
-        if (plan.StartId is { } startId)
-        {
-            var stream = KeepAliveStream.TryStart(startId);
-            if (stream is null)
-            {
-                _keepAliveRetry.Stop();
-                _keepAliveRetry.Start();
-            }
-            else
-            {
-                stream.Faulted += OnKeepAliveFaulted;
-                _keepAliveStream = stream;
-                _keepAliveRetry.Stop();
-            }
-        }
-
-        if (_keepAlive.DesiredId is null)
-            _keepAliveRetry.Stop();
-    }
-
-    /// <summary>
-    /// Raised on the stream's playback thread when it stops unexpectedly. Uses BeginInvoke, not
-    /// <see cref="SafeInvoke"/>: the UI side disposes the stream, which joins this very thread,
-    /// so a synchronous Invoke would deadlock. Retries after a delay rather than at once, so a
-    /// device that fails straight away can't spin.
-    /// </summary>
-    private void OnKeepAliveFaulted(object? sender, EventArgs e)
+    private void OnKeepAliveFaulted(KeepAliveStream stream, Action<IKeepAliveStream> onFaulted)
     {
         if (_shuttingDown) return;
         try
         {
             _contextMenu.BeginInvoke(() =>
             {
-                if (_shuttingDown || _keepAliveStream is null || !ReferenceEquals(_keepAliveStream, sender)) return;
-                _keepAliveStream.Dispose();
-                _keepAliveStream = null;
-                _keepAliveRetry.Stop();
-                _keepAliveRetry.Start();
+                if (!_shuttingDown) onFaulted(stream);
             });
         }
         catch (ObjectDisposedException) { /* shutting down */ }
@@ -1364,28 +1324,28 @@ public sealed class AudioLeashContext : ApplicationContext
     /// <summary>Lock, display and suspend changes from <see cref="KeepAlivePauseMonitor"/> (UI thread).</summary>
     private void OnPauseSignal(PauseSignal signal)
     {
+        var state = _keepAlive.State;
         switch (signal)
         {
-            case PauseSignal.Locked:     _keepAlive.IsLocked     = true;  break;
-            case PauseSignal.Unlocked:   _keepAlive.IsLocked     = false; break;
-            case PauseSignal.DisplayOff: _keepAlive.IsDisplayOff = true;  break;
-            case PauseSignal.DisplayOn:  _keepAlive.IsDisplayOff = false; break;
-            case PauseSignal.Suspending: _keepAlive.IsSuspended  = true;  break;
+            case PauseSignal.Locked:     state.IsLocked     = true;  break;
+            case PauseSignal.Unlocked:   state.IsLocked     = false; break;
+            case PauseSignal.DisplayOff: state.IsDisplayOff = true;  break;
+            case PauseSignal.DisplayOn:  state.IsDisplayOff = false; break;
+            case PauseSignal.Suspending: state.IsSuspended  = true;  break;
             case PauseSignal.Resumed:
-                _keepAlive.IsSuspended = false;
+                state.IsSuspended = false;
                 ArmKeepAliveCoalesce(); // the default may have changed while asleep
                 break;
         }
-        ReconcileKeepAlive();
+        _keepAlive.Reconcile();
     }
 
     /// <summary>A switch flipped on the settings window's "Keep devices awake" page: applies at once.</summary>
     private void OnKeepAliveToggled(object? sender, KeepAliveToggledEventArgs e)
     {
         var device = new RankedDevice(e.Device.Id, e.Device.Name, e.Device.Description);
-        if (!_keepAlive.SetEnabled(device, e.Enabled)) return;
-        _settingsService.SaveKeepAliveDevices(_keepAlive.Devices);
-        ReconcileKeepAlive();
+        if (_keepAlive.SetEnabled(device, e.Enabled))
+            _settingsService.SaveKeepAliveDevices(_keepAlive.State.Devices);
     }
 
     private void SafeInvoke(Action action)
@@ -1504,8 +1464,7 @@ public sealed class AudioLeashContext : ApplicationContext
             _keepAliveCoalesce.Dispose();
             _keepAliveRetry.Dispose();
             // Before the menu handle goes: a pending fault BeginInvoke then finds it already gone.
-            _keepAliveStream?.Dispose();
-            _keepAliveStream = null;
+            _keepAlive.Dispose();
 
             foreach (ToolStripItem item in _contextMenu.Items)
             {
