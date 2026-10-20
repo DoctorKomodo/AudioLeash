@@ -606,10 +606,12 @@ public sealed class AudioLeashContext : ApplicationContext
         }
 
         PriorityListEditor playback, capture;
+        IReadOnlyList<KeepAliveRow> keepAlive;
         try
         {
-            playback = CreatePriorityEditor(DataFlow.Render);
-            capture  = CreatePriorityEditor(DataFlow.Capture);
+            playback  = CreatePriorityEditor(DataFlow.Render);
+            capture   = CreatePriorityEditor(DataFlow.Capture);
+            keepAlive = KeepAliveRows.Build(EnumerateKnownDevices(DataFlow.Render), _settingsService.LoadKeepAliveDevices());
         }
         catch (Exception ex)
         {
@@ -617,7 +619,7 @@ public sealed class AudioLeashContext : ApplicationContext
             return;
         }
 
-        var form = new SettingsForm(playback, capture, _startupService.IsEnabled);
+        var form = new SettingsForm(playback, capture, _startupService.IsEnabled, keepAlive);
 
         // The switch applies at once; it doesn't touch audio, so there's nothing to defer.
         form.StartWithWindowsToggled += (_, _) => SetStartWithWindows(form.StartWithWindows);
@@ -642,7 +644,11 @@ public sealed class AudioLeashContext : ApplicationContext
     /// Builds the list editor for <paramref name="flow"/> from its ranked list and every
     /// endpoint Windows knows about (active, unplugged or disabled).
     /// </summary>
-    private PriorityListEditor CreatePriorityEditor(DataFlow flow)
+    private PriorityListEditor CreatePriorityEditor(DataFlow flow) =>
+        new(PriorityFor(flow).Ranked, EnumerateKnownDevices(flow));
+
+    /// <summary>Every endpoint Windows knows about for the flow (active, unplugged or disabled).</summary>
+    private List<DeviceRow> EnumerateKnownDevices(DataFlow flow)
     {
         var devices = _enumerator
             .EnumerateAudioEndPoints(flow, DeviceState.Active | DeviceState.Unplugged | DeviceState.Disabled)
@@ -661,7 +667,7 @@ public sealed class AudioLeashContext : ApplicationContext
                     // One misbehaving endpoint must not stop the settings window opening.
                 }
             }
-            return new PriorityListEditor(PriorityFor(flow).Ranked, known);
+            return known;
         }
         finally
         {
