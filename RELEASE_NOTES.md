@@ -1,5 +1,46 @@
 # AudioLeash — Release Notes
 
+## v2.0.0
+
+This release adds **device priority**: rank your devices and AudioLeash keeps the best one that's connected as your default. It also brings a settings window, a refreshed icon, and sharper rendering on high-DPI displays.
+
+### New Features
+
+**Device priority**
+- Rank several playback or recording devices — headphones first, speakers second, the TV third — and AudioLeash always uses the highest-ranked device that's connected.
+- Plug in a higher-ranked device and it switches up to it; unplug the current one and it falls back to the next.
+- It never switches on its own to a device you haven't ranked. Ranked devices unplugged for now keep their place and show **not connected**.
+- Ranked devices show their rank in the tray menu (e.g. `Headphones  #1`).
+- If you never rank anything, AudioLeash works exactly as before.
+
+**Manual override**
+- Picking any device in the tray menu holds it there regardless of the order; its line says **(manual)**. The pick survives a restart and ends when that device disconnects.
+- **Return to priority order** appears in the tray menu while a pick is in force and switches straight back to your top connected device.
+
+**Settings window**
+- New **Settings…** entry in the tray menu, with **Playback** and **Recording** tabs.
+- Drag devices to reorder them, or use **▲**/**▼**. Everything below the *Not ranked* line is left alone.
+- There's no Save button: changes apply when you close the window, so rearranging never switches your audio halfway.
+- The window follows your Windows light/dark theme, including the title bar, and supports keyboard and screen readers.
+- **Start with Windows** is now also a switch at the bottom of the window.
+
+### Improvements
+
+- **New tray icon** with a larger speaker and an open carabiner hook, with frames drawn for 125%, 150% and 250% display scaling.
+- **Per-monitor DPI awareness** so the menu and settings window stay crisp on mixed-DPI setups.
+
+### Fixes
+
+- AudioLeash now exits cleanly when the installer asks it to close, so upgrading over a running copy no longer needs a manual quit.
+- Fixed a possible deadlock while exiting.
+
+### Requirements
+
+- Windows 10 or 11
+- .NET 10 Windows Desktop Runtime — if it is missing, AudioLeash offers you the download link the first time you launch it
+
+---
+
 ## v1.2.0
 
 This release stops notification spam from flapping devices, and replaces the tray icon with one you can actually recognise.
