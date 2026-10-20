@@ -1,7 +1,7 @@
 # Keep Alive: Design
 
 **Date:** 2026-10-20
-**Status:** Draft
+**Status:** Approved
 
 ## Intent
 
