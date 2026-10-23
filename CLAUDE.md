@@ -59,7 +59,9 @@ AudioLeash/
 │   ├── ThemedControls.cs            ← Flat themed styling for buttons in the settings window
 │   ├── PolicyConfigClient.cs        ← COM interop: sets Windows default audio endpoint
 │   ├── SessionEndListener.cs        ← Exits on session end / installer Restart Manager close
-│   ├── SettingsService.cs           ← JSON settings persistence (%AppData%\AudioLeash\)
+│   ├── SettingsSnapshot.cs          ← Immutable snapshot of everything persisted (per-flow pick + ranked list, keep-alive)
+│   ├── SettingsFile.cs              ← Pure JSON parse/serialize of the versioned file, incl. the v2.1.x upgrade
+│   ├── SettingsStore.cs             ← Loads/saves the snapshot at %AppData%\AudioLeash\ (locked-file retry, .bak backup)
 │   ├── StartupService.cs            ← Windows Run-key startup registration
 │   ├── DarkMenuRenderer.cs          ← Dark mode context menu renderer
 │   ├── WindowsTheme.cs              ← Windows theme detection (light/dark)
@@ -79,7 +81,8 @@ AudioLeash/
     ├── PriorityListEditorTests.cs
     ├── PriorityStateTests.cs
     ├── SessionEndListenerTests.cs
-    ├── SettingsServiceTests.cs
+    ├── SettingsFileTests.cs
+    ├── SettingsStoreTests.cs
     ├── SilenceWaveProviderTests.cs
     ├── StartupServiceTests.cs
     ├── TrayIconLoaderTests.cs
@@ -91,7 +94,7 @@ AudioLeash/
 - Core logic lives in `AudioLeashContext.cs`. `DeviceSelectionState.cs` and `PolicyConfigClient.cs` are intentional splits: the former enables unit testing of pure logic; the latter isolates COM interop.
 - `DeviceSelectionState.IsInternalChange` (volatile) prevents feedback loops when the app itself triggers a device change.
 - `PriorityState.cs` is a pure, unit-testable state machine for ranked priority and manual override (with its own `IsInternalChange` loop guard); `PriorityListEditor.cs` is the pure logic behind the settings window.
-- The user-selected device is persisted to `%AppData%\AudioLeash\settings.json` via `SettingsService` and restored on startup.
+- While the app runs, the live state (`PriorityState`, `DeviceSelectionState`, `KeepAliveState`) is the only copy of the settings. `AudioLeashContext.SaveSettings()` writes a full `SettingsSnapshot` of it to `%AppData%\AudioLeash\settings.json` (version 2) via `SettingsStore`; every path that changes a setting calls it once.
 
 ---
 

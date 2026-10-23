@@ -43,8 +43,13 @@ internal enum SettledOutcome
 /// </summary>
 internal sealed class DeviceSelectionState
 {
+    private volatile RankedDevice? _selectedDevice;
+
+    /// <summary>The device the user has explicitly selected (id and cached names).</summary>
+    public RankedDevice? SelectedDevice => _selectedDevice;
+
     /// <summary>ID of the device the user has explicitly selected.</summary>
-    public string? SelectedDeviceId { get; private set; }
+    public string? SelectedDeviceId => SelectedDevice?.Id;
 
     private volatile bool _isInternalChange;
 
@@ -74,15 +79,15 @@ internal sealed class DeviceSelectionState
 
     public void SetDeviceAvailability(bool available) => IsDeviceAvailable = available;
 
-    public void SelectDevice(string deviceId)
+    public void SelectDevice(RankedDevice device)
     {
-        SelectedDeviceId = deviceId;
+        _selectedDevice = device;
         IsDeviceAvailable = true;
     }
 
     public void ClearSelection()
     {
-        SelectedDeviceId = null;
+        _selectedDevice = null;
         IsDeviceAvailable = true;
     }
 

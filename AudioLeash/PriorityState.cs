@@ -27,7 +27,7 @@ internal enum PriorityOutcome
     NoneConnected,
 }
 
-internal readonly record struct PriorityDecision(PriorityOutcome Outcome, string? TargetId, string? PreviousTargetId);
+internal readonly record struct PriorityDecision(PriorityOutcome Outcome, string? TargetId, string? PreviousTargetId, RankedDevice? EndedOverride = null);
 
 /// <summary>
 /// Pure state machine for ranked device priority. Contains no WinForms or audio-stack
@@ -39,7 +39,7 @@ internal sealed class PriorityState
 {
     private readonly object _lock = new();
     private IReadOnlyList<RankedDevice> _ranked = Array.Empty<RankedDevice>();
-    private string? _overrideId;
+    private RankedDevice? _override;
     private string? _targetId;
     private bool _inStartupGrace;
 
@@ -63,7 +63,10 @@ internal sealed class PriorityState
     public bool IsPriorityMode { get { lock (_lock) return _ranked.Count > 0; } }
 
     /// <summary>The manually chosen device that currently overrides the order, if any.</summary>
-    public string? OverrideId { get { lock (_lock) return _overrideId; } }
+    public RankedDevice? Override { get { lock (_lock) return _override; } }
+
+    /// <summary>The id of the manual override device, if any.</summary>
+    public string? OverrideId => Override?.Id;
 
     /// <summary>The last committed enforced device, or null when none is enforced.</summary>
     public string? TargetId { get { lock (_lock) return _targetId; } }
@@ -87,7 +90,7 @@ internal sealed class PriorityState
     /// <summary>True when the device is ranked or is the current override.</summary>
     public bool IsRelevant(string id)
     {
-        lock (_lock) return id == _overrideId || RankOfLocked(id) is not null;
+        lock (_lock) return id == _override?.Id || RankOfLocked(id) is not null;
     }
 
     /// <summary>Commits the startup target without producing a decision.</summary>
@@ -95,19 +98,19 @@ internal sealed class PriorityState
     {
         lock (_lock)
         {
-            _targetId = _overrideId is not null
-                ? (connected.Contains(_overrideId) ? _overrideId : null)
+            _targetId = _override is not null
+                ? (connected.Contains(_override.Id) ? _override.Id : null)
                 : TopLocked(connected);
         }
     }
 
-    /// <summary>Sets the manual override (and the enforced target) to <paramref name="id"/>.</summary>
-    public void StartOverride(string id)
+    /// <summary>Sets the manual override (and the enforced target) to <paramref name="device"/>.</summary>
+    public void StartOverride(RankedDevice device)
     {
         lock (_lock)
         {
-            _overrideId = id;
-            _targetId = id;
+            _override = device;
+            _targetId = device.Id;
         }
     }
 
@@ -116,7 +119,7 @@ internal sealed class PriorityState
     {
         lock (_lock)
         {
-            _overrideId = null;
+            _override = null;
             _targetId = TopLocked(connected);
             return _targetId;
         }
@@ -134,11 +137,11 @@ internal sealed class PriorityState
     {
         lock (_lock)
         {
-            if (_overrideId is not null)
+            if (_override is not null)
             {
-                if (connected.Contains(_overrideId))
+                if (connected.Contains(_override.Id))
                 {
-                    _targetId = _overrideId;
+                    _targetId = _override.Id;
                     return new PriorityDecision(PriorityOutcome.ReassertSilently, _targetId, _targetId);
                 }
 
@@ -148,10 +151,10 @@ internal sealed class PriorityState
                     return new PriorityDecision(PriorityOutcome.None, null, null);
                 }
 
-                var ended = _overrideId;
-                _overrideId = null;
+                var ended = _override;
+                _override = null;
                 _targetId = TopLocked(connected);
-                return new PriorityDecision(PriorityOutcome.OverrideEnded, _targetId, ended);
+                return new PriorityDecision(PriorityOutcome.OverrideEnded, _targetId, ended.Id, ended);
             }
 
             var prev = _targetId;
@@ -190,7 +193,7 @@ internal sealed class PriorityState
         lock (_lock)
         {
             target = _targetId;
-            overrideId = _overrideId;
+            overrideId = _override?.Id;
             newRank = RankOfLocked(newDefaultId);
             targetRank = target is null ? null : RankOfLocked(target);
         }
@@ -204,21 +207,6 @@ internal sealed class PriorityState
 
         return new DefaultChangeDecision(RestoreDecision.Restore, target);
     }
-
-    /// <summary>
-    /// The pick that should be persisted after a flow changes mode: legacy to legacy keeps
-    /// the legacy pick, legacy to priority clears it, priority to priority keeps the override,
-    /// and priority to legacy pins whatever is currently the default.
-    /// </summary>
-    public static string? PlanPersistedPick(
-        bool wasPriority, bool isPriority, string? legacyPickId, string? overrideId, string? currentDefaultId)
-        => (wasPriority, isPriority) switch
-        {
-            (false, false) => legacyPickId,
-            (false, true) => null,
-            (true, true) => overrideId,
-            (true, false) => currentDefaultId,
-        };
 
     private int? RankOfLocked(string id)
     {

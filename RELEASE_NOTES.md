@@ -1,5 +1,10 @@
 # AudioLeash — Release Notes
 
+## v2.1.2
+
+- Settings are now stored in a new versioned format, and your existing settings are upgraded automatically.
+- Older AudioLeash versions cannot read the new settings format. If an unreadable settings file is replaced, a `settings.json.bak` copy of it may appear.
+
 ## v2.1.1
 
 ### Fixes
