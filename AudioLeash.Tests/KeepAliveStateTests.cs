@@ -124,4 +124,24 @@ public class KeepAliveStateTests
         var state = new KeepAliveState([D("A"), D("A"), new RankedDevice("", "x")]);
         Assert.Single(state.Devices);
     }
+
+    [Fact]
+    public void ReplaceAll_KeepsTheGivenOrder()
+    {
+        var state = Make("B", "A", "C");
+        state.ReplaceAll([D("B"), D("C")]);
+
+        Assert.Equal(["B", "C"], state.Devices.Select(d => d.Id));
+        Assert.Equal("B", state.DesiredId);
+        Assert.False(state.IsEnabled("A"));
+    }
+
+    [Fact]
+    public void ReplaceAll_DropsDuplicateAndEmptyIds()
+    {
+        var state = Make(null, "A");
+        state.ReplaceAll([D("B"), D("B"), D("")]);
+
+        Assert.Equal(["B"], state.Devices.Select(d => d.Id));
+    }
 }

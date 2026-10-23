@@ -45,6 +45,7 @@ Instead of locking one device, you can rank several — say headphones first, sp
 - **Ranked devices** sit at the top, numbered in priority order. Drag a device to reorder it, or select it and use **▲**/**▼**.
 - Everything below the line *"Not ranked: AudioLeash won't switch to these on its own"* is left alone. Drag a device across the line (or use **▲**/**▼**) to rank or unrank it.
 - A ranked device that's unplugged keeps its place and shows **not connected**.
+- **Driver updates** — updating a driver (a GPU driver update reinstalls HDMI audio, for example) can make Windows treat a device as brand new. AudioLeash spots the replacement by its name and moves your locked device, ranking and keep-awake setting over to it automatically, at startup or as soon as the device appears. A manual pick carries over at startup; if the device is replaced while AudioLeash is running, the pick ends as it would for any disconnect and the priority order takes over.
 - There's no Save button: your new order takes effect when you close the settings window, so rearranging never switches your audio halfway. To undo a change, move the device back before closing.
 
 With a list in place, AudioLeash keeps the highest-ranked **connected** device as the default. Plug in a higher-ranked device and it switches up to it; unplug the current one and it falls back to the next. It never switches on its own to a device you haven't ranked. In the tray menu, ranked devices show their rank (e.g. `Headphones  #1`).

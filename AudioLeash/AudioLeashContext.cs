@@ -30,6 +30,7 @@ public sealed class AudioLeashContext : ApplicationContext
     private readonly Font                    _sectionHeaderFont;
     private readonly System.Windows.Forms.Timer _renderDebounce;
     private readonly System.Windows.Forms.Timer _captureDebounce;
+    private readonly System.Windows.Forms.Timer _rebindDebounce;
     private readonly System.Windows.Forms.Timer? _startupGraceTimer;
     private readonly SessionEndListener      _sessionEndListener;
     private readonly KeepAliveController     _keepAlive;
@@ -89,6 +90,16 @@ public sealed class AudioLeashContext : ApplicationContext
         _renderDebounce.Tick  += (_, _) => { _renderDebounce.Stop();  ReconcileDeviceState(DataFlow.Render); };
         _captureDebounce.Tick += (_, _) => { _captureDebounce.Stop(); ReconcileDeviceState(DataFlow.Capture); };
 
+        // A device that appears may be a saved one under a new endpoint ID (driver reinstall);
+        // checked once arrivals settle — see RebindReplacedDevices.
+        _rebindDebounce = new System.Windows.Forms.Timer { Interval = DebounceMs };
+        _rebindDebounce.Tick += (_, _) =>
+        {
+            _rebindDebounce.Stop();
+            try { RebindReplacedDevices(); }
+            catch (Exception) { /* transient COM failure; the next device arrival retries */ }
+        };
+
         _trayIcon = new NotifyIcon
         {
             Icon             = TrayIconLoader.Load(SystemInformation.SmallIconSize),
@@ -137,28 +148,38 @@ public sealed class AudioLeashContext : ApplicationContext
         // IMPORTANT: _notificationClient must be a class field, not a local variable.
         // If the GC collects it while Windows holds a native COM pointer the process
         // will crash with ExecutionEngineException. (NAudio issue #849)
-        _notificationClient = new AudioNotificationClient(OnDefaultDeviceChanged, OnDeviceStateChanged);
+        _notificationClient = new AudioNotificationClient(OnDefaultDeviceChanged, OnDeviceStateChanged, ArmRebindCheck);
         _enumerator.RegisterEndpointNotificationCallback(_notificationClient);
 
         _settingsService = new SettingsService();
         _startupService  = new StartupService();
-        foreach (var device in _settingsService.LoadKeepAliveDevices())
+
+        // Saved entries whose endpoint was replaced (e.g. by a driver update) are re-bound
+        // before anything is loaded, so the flows start on the current endpoint IDs.
+        var knownRender  = TryGetRebindDevices(DataFlow.Render);
+        var knownCapture = TryGetRebindDevices(DataFlow.Capture);
+        foreach (var device in RebindSaved(
+                     _settingsService.LoadKeepAliveDevices(), knownRender, _settingsService.SaveKeepAliveDevices))
             _keepAlive.State.SetEnabled(device, true);
 
         // Restore saved device selections (playback and capture).
-        string? savedPlaybackId = _settingsService.LoadSelectedPlaybackDeviceId();
-        string? savedCaptureId  = _settingsService.LoadSelectedCaptureDeviceId();
         _savedPlaybackDeviceName = _settingsService.LoadSelectedPlaybackDeviceName();
         _savedCaptureDeviceName  = _settingsService.LoadSelectedCaptureDeviceName();
+        string? savedPlaybackId = RebindSavedPick(
+            DataFlow.Render, _settingsService.LoadSelectedPlaybackDeviceId(), knownRender);
+        string? savedCaptureId = RebindSavedPick(
+            DataFlow.Capture, _settingsService.LoadSelectedCaptureDeviceId(), knownCapture);
         bool isFirstRun = savedPlaybackId is null && !_settingsService.HasSettingsFile;
 
         // Each flow starts in priority mode (ranked list configured) or legacy mode.
         // Only legacy flows can report "Saved Device Unavailable"; a priority flow's
         // absent override is handled by the startup grace period instead.
-        bool playbackUnavailable = StartFlow(
-            DataFlow.Render, _settingsService.LoadPlaybackPriority(), savedPlaybackId, out bool playbackGrace);
-        bool captureUnavailable = StartFlow(
-            DataFlow.Capture, _settingsService.LoadCapturePriority(), savedCaptureId, out bool captureGrace);
+        var playbackRanked = RebindSaved(
+            _settingsService.LoadPlaybackPriority(), knownRender, _settingsService.SavePlaybackPriority);
+        var captureRanked = RebindSaved(
+            _settingsService.LoadCapturePriority(), knownCapture, _settingsService.SaveCapturePriority);
+        bool playbackUnavailable = StartFlow(DataFlow.Render, playbackRanked, savedPlaybackId, out bool playbackGrace);
+        bool captureUnavailable  = StartFlow(DataFlow.Capture, captureRanked, savedCaptureId, out bool captureGrace);
 
         if (playbackGrace || captureGrace)
         {
@@ -669,6 +690,9 @@ public sealed class AudioLeashContext : ApplicationContext
                                          or CloseReason.TaskManagerClosing;
             try { ApplySettings(playback, capture, exiting); }
             finally { form.Dispose(); }
+
+            // Rebinds are skipped while the window is open; catch up on any that were.
+            if (!exiting) ArmRebindCheck();
         };
         _settingsForm = form;
         form.Show();
@@ -706,6 +730,131 @@ public sealed class AudioLeashContext : ApplicationContext
         finally
         {
             foreach (var d in devices) d.Dispose();
+        }
+    }
+
+    /// <summary>What <see cref="DeviceRebinder"/> needs for one flow.</summary>
+    private sealed record RebindDevices(IReadOnlySet<string> ExistingIds, List<DeviceRow> Candidates);
+
+    /// <summary>
+    /// Every endpoint ID for the flow in any state (NotPresent included), plus the endpoints a
+    /// saved entry may move to. Null when enumeration fails.
+    /// </summary>
+    private RebindDevices? TryGetRebindDevices(DataFlow flow)
+    {
+        try
+        {
+            var all = _enumerator.EnumerateAudioEndPoints(flow, DeviceState.All).ToList();
+            var existing = new HashSet<string>(StringComparer.Ordinal);
+            try
+            {
+                foreach (var d in all) existing.Add(d.ID);
+            }
+            finally
+            {
+                foreach (var d in all) d.Dispose();
+            }
+            return new RebindDevices(existing, EnumerateKnownDevices(flow));
+        }
+        catch (Exception) { return null; /* transient COM failure; the next device arrival retries */ }
+    }
+
+    /// <summary>
+    /// Re-binds <paramref name="list"/> against <paramref name="devices"/> (see
+    /// <see cref="DeviceRebinder"/>) and persists it through <paramref name="save"/> when
+    /// anything changed. Returns the same <paramref name="list"/> instance when nothing changed
+    /// (or <paramref name="devices"/> is null), so callers can detect a rebind by reference.
+    /// </summary>
+    private static IReadOnlyList<RankedDevice> RebindSaved(
+        IReadOnlyList<RankedDevice> list, RebindDevices? devices, Action<IReadOnlyList<RankedDevice>> save)
+    {
+        if (devices is null || list.Count == 0) return list;
+        var rebound = DeviceRebinder.Rebind(list, devices.ExistingIds, devices.Candidates, out bool changed);
+        if (!changed) return list;
+        save(rebound);
+        return rebound;
+    }
+
+    /// <summary>
+    /// Re-binds the flow's saved pick (the legacy locked device, or the manual override in
+    /// priority mode) like a ranked entry, matching on its saved name, and persists it when it
+    /// moved. Returns the pick's current ID — <paramref name="pickId"/> when nothing changed.
+    /// </summary>
+    private string? RebindSavedPick(DataFlow flow, string? pickId, RebindDevices? devices)
+    {
+        string? name = flow == DataFlow.Render ? _savedPlaybackDeviceName : _savedCaptureDeviceName;
+        if (pickId is null || name is null) return pickId;
+
+        var rebound = RebindSaved([new RankedDevice(pickId, name)], devices, list =>
+        {
+            var pick = list[0];
+            if (flow == DataFlow.Render)
+            {
+                _savedPlaybackDeviceName = pick.Name;
+                _settingsService.SaveSelectedPlaybackDevice(pick.Id, pick.Name);
+            }
+            else
+            {
+                _savedCaptureDeviceName = pick.Name;
+                _settingsService.SaveSelectedCaptureDevice(pick.Id, pick.Name);
+            }
+        });
+        return rebound[0].Id;
+    }
+
+    /// <summary>
+    /// Runs on the UI thread once device arrivals settle. Saved ranked, pick and keep-alive entries
+    /// whose endpoint was replaced while the app runs (e.g. a GPU driver update reinstalling
+    /// HDMI audio) are moved to the new endpoint, then the affected flows are reconciled.
+    /// Skipped while the settings window is open — it would save its stale IDs back on close —
+    /// and checked again when it closes.
+    /// </summary>
+    private void RebindReplacedDevices()
+    {
+        if (_settingsForm is not null) return;
+
+        var knownRender = TryGetRebindDevices(DataFlow.Render);
+
+        foreach (var flow in new[] { DataFlow.Render, DataFlow.Capture })
+        {
+            var priority = PriorityFor(flow);
+            var known    = flow == DataFlow.Render ? knownRender : TryGetRebindDevices(flow);
+            var before   = priority.Ranked;
+            var after    = RebindSaved(before, known, flow == DataFlow.Render
+                ? _settingsService.SavePlaybackPriority
+                : _settingsService.SaveCapturePriority);
+            bool changed = !ReferenceEquals(before, after);
+            if (changed) priority.SetRanked(after);
+
+            // The pick: the manual override in priority mode, the locked device otherwise.
+            var selection = SelectionFor(flow);
+            string? pickId = priority.IsPriorityMode ? priority.OverrideId : selection.SelectedDeviceId;
+            string? newPickId = RebindSavedPick(flow, pickId, known);
+            if (newPickId != pickId && newPickId is not null)
+            {
+                changed = true;
+                if (priority.IsPriorityMode)
+                {
+                    priority.StartOverride(newPickId);
+                }
+                else
+                {
+                    // Keep the notified availability, so the reconcile reports a reconnect.
+                    bool wasAvailable = selection.IsDeviceAvailable;
+                    selection.SelectDevice(newPickId);
+                    selection.SetDeviceAvailability(wasAvailable);
+                }
+            }
+
+            if (changed) ReconcileDeviceState(flow);
+        }
+
+        var enabledBefore = _keepAlive.State.Devices;
+        var enabledAfter  = RebindSaved(enabledBefore, knownRender, _settingsService.SaveKeepAliveDevices);
+        if (!ReferenceEquals(enabledBefore, enabledAfter))
+        {
+            _keepAlive.State.ReplaceAll(enabledAfter);
+            _keepAlive.RefreshDefault();
         }
     }
 
@@ -1008,6 +1157,7 @@ public sealed class AudioLeashContext : ApplicationContext
     /// </remarks>
     private void OnDeviceStateChanged(string deviceId, DeviceState newState)
     {
+        if (newState == DeviceState.Active) ArmRebindCheck();
         if (_keepAlive.State.IsEnabled(deviceId))
             ArmKeepAliveCoalesce();
         if (_selection.SelectedDeviceId == deviceId || IsPriorityRelevant(DataFlow.Render, deviceId))
@@ -1025,6 +1175,17 @@ public sealed class AudioLeashContext : ApplicationContext
         var priority = PriorityFor(flow);
         return priority.IsPriorityMode && priority.IsRelevant(deviceId);
     }
+
+    /// <summary>
+    /// (Re)starts the timer that runs <see cref="RebindReplacedDevices"/> once device arrivals
+    /// settle. Safe to call from the audio thread: it marshals to the UI thread.
+    /// </summary>
+    private void ArmRebindCheck() =>
+        SafeInvoke(() =>
+        {
+            _rebindDebounce.Stop();
+            _rebindDebounce.Start();
+        });
 
     /// <summary>
     /// (Re)starts the debounce timer for the given flow. Marshals to the UI thread
@@ -1457,6 +1618,8 @@ public sealed class AudioLeashContext : ApplicationContext
             _captureDebounce.Stop();
             _renderDebounce.Dispose();
             _captureDebounce.Dispose();
+            _rebindDebounce.Stop();
+            _rebindDebounce.Dispose();
             _startupGraceTimer?.Stop();
             _startupGraceTimer?.Dispose();
             _keepAliveCoalesce.Stop();
@@ -1505,13 +1668,16 @@ public sealed class AudioLeashContext : ApplicationContext
     {
         private readonly Action<DataFlow, string> _onDefaultChanged;
         private readonly Action<string, DeviceState> _onDeviceStateChanged;
+        private readonly Action _onDeviceAdded;
 
         internal AudioNotificationClient(
             Action<DataFlow, string> onDefaultChanged,
-            Action<string, DeviceState> onDeviceStateChanged)
+            Action<string, DeviceState> onDeviceStateChanged,
+            Action onDeviceAdded)
         {
             _onDefaultChanged = onDefaultChanged;
             _onDeviceStateChanged = onDeviceStateChanged;
+            _onDeviceAdded = onDeviceAdded;
         }
 
         public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)
@@ -1531,8 +1697,9 @@ public sealed class AudioLeashContext : ApplicationContext
         public void OnDeviceStateChanged(string deviceId, DeviceState newState)
             => _onDeviceStateChanged(deviceId, newState);
 
+        public void OnDeviceAdded(string pwstrDeviceId) => _onDeviceAdded();
+
         // Required by IMMNotificationClient; AudioLeash does not act on these.
-        public void OnDeviceAdded(string pwstrDeviceId) { }
         public void OnDeviceRemoved(string deviceId) { }
         public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key) { }
     }
