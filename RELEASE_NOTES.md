@@ -1,5 +1,11 @@
 # AudioLeash — Release Notes
 
+## v2.1.1
+
+### Fixes
+
+- **Devices survive driver updates** — updating a driver (a GPU driver update reinstalls HDMI audio, for example) could make Windows treat a device as brand new, leaving your ranked or keep-awake entry stuck as **not connected** while the same device showed up unranked. AudioLeash now recognises the replacement by its name and moves your settings over to it automatically.
+
 ## v2.1.0
 
 This release adds **Keep devices awake**, for receivers and TVs that cut off the start of sounds.

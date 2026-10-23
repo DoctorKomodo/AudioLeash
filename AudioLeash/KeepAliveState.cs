@@ -15,16 +15,23 @@ internal readonly record struct KeepAlivePlan(bool StopCurrent, string? StartId)
 /// </summary>
 internal sealed class KeepAliveState
 {
-    private readonly List<RankedDevice> _devices = [];
+    private List<RankedDevice> _devices = [];
 
     /// <param name="devices">The enabled devices; empty and duplicate IDs are ignored (first wins).</param>
-    public KeepAliveState(IReadOnlyList<RankedDevice> devices)
+    public KeepAliveState(IReadOnlyList<RankedDevice> devices) => ReplaceAll(devices);
+
+    /// <summary>Replaces the enabled devices, keeping their order; empty and duplicate IDs are ignored (first wins).</summary>
+    public void ReplaceAll(IReadOnlyList<RankedDevice> devices)
     {
+        // Built aside and swapped in, so a reader never sees a half-filled list.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var list = new List<RankedDevice>();
         foreach (var d in devices)
         {
-            if (!string.IsNullOrEmpty(d.Id) && !IsEnabled(d.Id))
-                _devices.Add(d);
+            if (!string.IsNullOrEmpty(d.Id) && seen.Add(d.Id))
+                list.Add(d);
         }
+        _devices = list;
     }
 
     /// <summary>The devices with keep-alive enabled, in the order they were enabled.</summary>

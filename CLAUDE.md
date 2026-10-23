@@ -42,6 +42,7 @@ AudioLeash/
 │   ├── AudioLeashContext.cs         ← All application logic (tray, menu, device events)
 │   ├── DeviceSelectionState.cs      ← Pure selection state machine (unit-testable)
 │   ├── RankedDevice.cs              ← One entry in a ranked priority list (id + cached name)
+│   ├── DeviceRebinder.cs            ← Pure logic: moves saved entries to an endpoint that replaced theirs (unit-testable)
 │   ├── PriorityState.cs             ← Pure ranked-priority/override state machine (unit-testable)
 │   ├── PriorityListEditor.cs        ← Pure list-editing logic behind the settings window
 │   ├── PriorityListControl.cs       ← Owner-drawn ranked/unranked device list (settings window)
@@ -68,6 +69,7 @@ AudioLeash/
 └── AudioLeash.Tests/
     ├── AudioLeash.Tests.csproj      ← xUnit + NSubstitute
     ├── ClearSelectionMessageTests.cs
+    ├── DeviceRebinderTests.cs
     ├── DeviceSelectionStateTests.cs
     ├── IconAssetTests.cs
     ├── KeepAliveControllerTests.cs
