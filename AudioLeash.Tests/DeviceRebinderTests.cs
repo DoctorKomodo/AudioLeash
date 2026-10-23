@@ -244,4 +244,88 @@ public class DeviceRebinderTests
         Assert.True(changed);
         Assert.Equal("new", result[0].Id);
     }
+
+    private static KnownDevices Known(params DeviceRow[] rows) =>
+        new(rows.Select(r => r.Id).ToHashSet(StringComparer.Ordinal), rows);
+
+    [Fact]
+    public void RefreshPick_MatchingId_TakesCurrentNameAndDescription()
+    {
+        var result = DeviceRebinder.RefreshPick(
+            new RankedDevice("tv", "old name", null), [Row("tv", connected: true)]);
+
+        Assert.Equal(new RankedDevice("tv", Tv, TvDesc), result);
+    }
+
+    [Fact]
+    public void RefreshPick_NoMatch_ReturnsSameInstance()
+    {
+        var pick = Saved("tv");
+
+        Assert.Same(pick, DeviceRebinder.RefreshPick(pick, [Row("other", connected: true)]));
+    }
+
+    [Fact]
+    public void RefreshPick_Null_ReturnsNull()
+    {
+        Assert.Null(DeviceRebinder.RefreshPick(null, [Row("tv", connected: true)]));
+    }
+
+    [Fact]
+    public void Refresh_RebindsListsPickAndKeepAlive()
+    {
+        var snapshot = new SettingsSnapshot(
+            new FlowSnapshot(Saved("old"), [Saved("old")]),
+            FlowSnapshot.Empty,
+            [Saved("old")]);
+
+        var result = DeviceRebinder.Refresh(snapshot, Known(Row("new", connected: true)), null, out bool changed);
+
+        Assert.True(changed);
+        Assert.Equal([Saved("new")], result.Playback.Priority);
+        Assert.Equal(Saved("new"), result.Playback.Pick);
+        Assert.Equal([Saved("new")], result.KeepAlive);
+    }
+
+    [Fact]
+    public void Refresh_UpgradedPickGainsDescription()
+    {
+        var snapshot = new SettingsSnapshot(
+            new FlowSnapshot(Saved("tv", desc: null), []), FlowSnapshot.Empty, []);
+
+        var result = DeviceRebinder.Refresh(snapshot, Known(Row("tv", connected: true)), null, out bool changed);
+
+        Assert.True(changed);
+        Assert.Equal(TvDesc, result.Playback.Pick!.Description);
+    }
+
+    [Fact]
+    public void Refresh_NothingToDo_ChangedFalse()
+    {
+        var snapshot = new SettingsSnapshot(
+            new FlowSnapshot(Saved("tv"), [Saved("tv")]), FlowSnapshot.Empty, [Saved("tv")]);
+
+        var result = DeviceRebinder.Refresh(snapshot, Known(Row("tv", connected: true)), Known(), out bool changed);
+
+        Assert.False(changed);
+        Assert.Equal(snapshot.Playback.Pick, result.Playback.Pick);
+        Assert.Equal(snapshot.Playback.Priority, result.Playback.Priority);
+        Assert.Equal(snapshot.KeepAlive, result.KeepAlive);
+    }
+
+    [Fact]
+    public void Refresh_NullKnownDevices_LeavesFlowUntouched()
+    {
+        var snapshot = new SettingsSnapshot(
+            new FlowSnapshot(Saved("old"), [Saved("old")]),
+            new FlowSnapshot(Saved("rec"), [Saved("rec")]),
+            [Saved("old")]);
+
+        var result = DeviceRebinder.Refresh(snapshot, null, null, out bool changed);
+
+        Assert.False(changed);
+        Assert.Same(snapshot.Playback, result.Playback);
+        Assert.Same(snapshot.Recording, result.Recording);
+        Assert.Same(snapshot.KeepAlive, result.KeepAlive);
+    }
 }
