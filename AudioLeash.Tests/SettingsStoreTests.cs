@@ -128,6 +128,10 @@ public sealed class SettingsStoreTests : IDisposable
         store.Save(loaded);
         Assert.Contains("\"version\": 2", File.ReadAllText(FilePath));
         Assert.False(File.Exists(BakPath));
+
+        var reloaded = new SettingsStore(_dir).Load();
+        Assert.Equal("old", reloaded.Playback.Pick?.Id);
+        Assert.Equal(SettingsFile.Serialize(loaded), SettingsFile.Serialize(reloaded));
     }
 
     [Fact]
@@ -170,6 +174,20 @@ public sealed class SettingsStoreTests : IDisposable
 
         Assert.Equal("not json {", File.ReadAllText(BakPath));
         Assert.Equal(SettingsFile.Serialize(NonEmpty()), File.ReadAllText(FilePath));
+    }
+
+    [Fact]
+    public void Save_UnusableFileDeletedBeforeSave_WritesWithoutBackup()
+    {
+        WriteRaw("not json {");
+        var store = new SettingsStore(_dir);
+        store.Load();
+        File.Delete(FilePath);
+
+        store.Save(NonEmpty());
+
+        Assert.Equal(SettingsFile.Serialize(NonEmpty()), File.ReadAllText(FilePath));
+        Assert.False(File.Exists(BakPath));
     }
 
     [Fact]

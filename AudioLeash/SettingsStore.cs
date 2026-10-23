@@ -71,7 +71,7 @@ public sealed class SettingsStore
             HasSettingsFile = _fs.Exists(FilePath);
             if (!HasSettingsFile)
             {
-                _lastJson = SettingsFile.Serialize(SettingsSnapshot.Empty);
+                _lastJson = EmptyJson;
                 _backupPending = false;
                 return SettingsSnapshot.Empty;
             }
@@ -108,6 +108,9 @@ public sealed class SettingsStore
             var json = SettingsFile.Serialize(snapshot);
             if (json == _lastJson) return;
             if (_backupPending && json == EmptyJson) return;
+
+            // Nothing left to protect if the unusable file has since disappeared.
+            if (_backupPending && !_fs.Exists(FilePath)) _backupPending = false;
 
             if (_backupPending)
             {
