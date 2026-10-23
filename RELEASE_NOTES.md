@@ -1,5 +1,9 @@
 # AudioLeash — Release Notes
 
+## v2.1.2
+
+- Settings are now stored in a new versioned format, and your existing settings are upgraded automatically.
+
 ## v2.1.1
 
 ### Fixes

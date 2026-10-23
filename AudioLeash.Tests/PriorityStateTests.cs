@@ -289,15 +289,4 @@ public class PriorityStateTests
         Assert.Equal(PriorityOutcome.SwitchedUp, d.Outcome);
         Assert.Null(d.EndedOverride);
     }
-
-    [Theory]
-    [InlineData(false, false, "legacy", "ov", "cur", "legacy")]
-    [InlineData(false, true, "legacy", "ov", "cur", null)]
-    [InlineData(true, true, "legacy", "ov", "cur", "ov")]
-    [InlineData(true, false, "legacy", "ov", "cur", "cur")]
-    public void PlanPersistedPick_CoversAllFourTransitions(
-        bool wasPriority, bool isPriority, string? legacy, string? ov, string? cur, string? expected)
-    {
-        Assert.Equal(expected, PriorityState.PlanPersistedPick(wasPriority, isPriority, legacy, ov, cur));
-    }
 }

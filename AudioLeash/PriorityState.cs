@@ -208,21 +208,6 @@ internal sealed class PriorityState
         return new DefaultChangeDecision(RestoreDecision.Restore, target);
     }
 
-    /// <summary>
-    /// The pick that should be persisted after a flow changes mode: legacy to legacy keeps
-    /// the legacy pick, legacy to priority clears it, priority to priority keeps the override,
-    /// and priority to legacy pins whatever is currently the default.
-    /// </summary>
-    public static string? PlanPersistedPick(
-        bool wasPriority, bool isPriority, string? legacyPickId, string? overrideId, string? currentDefaultId)
-        => (wasPriority, isPriority) switch
-        {
-            (false, false) => legacyPickId,
-            (false, true) => null,
-            (true, true) => overrideId,
-            (true, false) => currentDefaultId,
-        };
-
     private int? RankOfLocked(string id)
     {
         for (int i = 0; i < _ranked.Count; i++)
