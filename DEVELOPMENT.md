@@ -117,7 +117,13 @@ AudioLeash/
 │   ├── PriorityState.cs             ← Pure ranked-priority/override state machine (unit-testable)
 │   ├── PriorityListEditor.cs        ← Pure list-editing logic behind the settings window
 │   ├── PriorityListControl.cs       ← Owner-drawn ranked/unranked device list (settings window)
-│   ├── SettingsForm.cs              ← Settings window (Playback / Recording tabs, Start with Windows switch; applies on close)
+│   ├── SettingsForm.cs              ← Settings window (Playback / Recording tabs, Keep devices awake page, Start with Windows switch)
+│   ├── KeepAliveState.cs            ← Pure keep-alive decision logic: which device should stream (unit-testable)
+│   ├── KeepAliveRows.cs             ← Pure model behind the "Keep devices awake" page
+│   ├── KeepAliveController.cs       ← Keeps at most one keep-alive stream matching the state (re-entrancy safe, unit-testable)
+│   ├── KeepAliveStream.cs           ← Shared-mode WASAPI stream of silence on one device
+│   ├── SilenceWaveProvider.cs       ← Endless zero-filled IWaveProvider (keep-alive "Zero" mode)
+│   ├── KeepAlivePauseMonitor.cs     ← Hidden window reporting lock, display-off and suspend
 │   ├── ToggleSwitch.cs              ← Windows 11-style on/off switch used by the settings window
 │   ├── SettingsTheme.cs             ← Light/dark palette the settings window draws with
 │   ├── UnderlineTabStrip.cs         ← Flat underline tabs used by the settings window
@@ -136,10 +142,15 @@ AudioLeash/
     ├── ClearSelectionMessageTests.cs
     ├── DeviceSelectionStateTests.cs
     ├── IconAssetTests.cs
+    ├── KeepAliveControllerTests.cs
+    ├── KeepAlivePauseMonitorTests.cs
+    ├── KeepAliveRowsTests.cs
+    ├── KeepAliveStateTests.cs
     ├── PriorityListEditorTests.cs
     ├── PriorityStateTests.cs
     ├── SessionEndListenerTests.cs
     ├── SettingsServiceTests.cs
+    ├── SilenceWaveProviderTests.cs
     ├── StartupServiceTests.cs
     ├── TrayIconLoaderTests.cs
     └── WindowsThemeTests.cs
@@ -153,6 +164,7 @@ AudioLeash/
 - **Debounced device-state handling** — connect/disconnect events for the selected device don't act immediately. `OnDeviceStateChanged` (and the `Suspend` branch of `OnDefaultDeviceChanged`) re-arm a per-flow `System.Windows.Forms.Timer` (`DebounceMs`, 1000 ms). Only once the endpoint stops flapping does `ReconcileDeviceState` re-query the device's actual availability and call `DeviceSelectionState.EvaluateSettledState`, which returns a single `SettledOutcome` reflecting the net change. This collapses rapid flapping (e.g. an HDMI/eARC handshake) into at most one notification — a flap that ends back on the selected device restores it silently. The immediate `Restore` (leash-yank) path in `OnDefaultDeviceChanged` is unaffected and stays snappy.
 - **Legacy vs. priority mode (per flow)** — a flow with an empty ranked list runs in legacy mode: `DeviceSelectionState` enforces the single pick exactly as before. A non-empty list switches the flow to priority mode, driven by `PriorityState`: the target is the highest-ranked connected device, or the manual override while one is in force. `PriorityState` guards its fields with a lock because the audio thread reads them in `EvaluateDefaultChange`; the debounced reconcile calls `EvaluateSettled`, whose `PriorityOutcome` drives one balloon at most. Ranked lists are stored as `PlaybackPriority` / `CapturePriority` (with cached names, so absent devices still display).
 - **The override reuses the `Selected*` fields** — in priority mode, `SelectedPlaybackDeviceId` / `SelectedCaptureDeviceId` (and their names) hold the persisted manual override instead of the legacy pick, so a restart restores it (under a short startup grace period). When the settings window saves a mode change, `PriorityState.PlanPersistedPick` decides what those fields hold: legacy → priority clears them, priority → priority keeps the override, priority → legacy pins the current Windows default as the new legacy pick.
+- **Keep-alive** — `KeepAliveState` decides which device should stream: the Render/Multimedia default, if it has keep-alive enabled and nothing pauses it (lock, display off, suspend, reported by `KeepAlivePauseMonitor`'s hidden window). `KeepAliveController` stops and starts a single `KeepAliveStream` to match; starting or stopping blocks the UI thread in a CLR wait that still delivers sent power/session messages, so a re-entrant reconcile is folded into another pass instead of orphaning a stream. Default-device changes are coalesced by a 500 ms one-shot timer so restores and HDMI flaps don't churn the stream. `KeepAliveStream` uses NAudio's `WasapiOut` in shared mode with **polling** at 400 ms latency (about 5 wakeups a second; event sync would wake every ~10 ms engine period) and the device's mix format. All of its COM setup runs on a thread-pool (MTA) thread. A stream that stops unexpectedly reports a fault on its playback thread (the callback is wired before `Play()`, so even an immediate failure is caught); the context hands it to the controller with `BeginInvoke`, not `SafeInvoke`, because disposing the stream joins that thread, and retries on a 5 s one-shot timer. No stream, thread or timer exists while keep-alive isn't wanted. Enabled devices are stored as `KeepAliveDevices`.
 - The user-selected device (ID and friendly name) is persisted to `%AppData%\AudioLeash\settings.json` via `SettingsService` and restored on startup.
 
 ## Known Issues
@@ -168,7 +180,8 @@ Ideas for future development, roughly in order of interest:
 - **Profiles** — named profiles that switch multiple devices (playback + recording) together. Could also address the boot-time race where a saved device hasn't finished initialising when the app starts: a profile-aware restore could defer until the target device comes online.
 - **Per-app routing** — use Windows 10+ per-application audio settings where supported.
 - **Volume indicator** — show or control master volume from the tray menu.
+- **Fluctuate mode for keep-alive** — tiny non-zero samples, for hardware that ignores pure digital silence (as in Sound Keeper's default mode).
 
 ### Already shipped
 
-Windows-startup toggle · recording-device support · settings persistence · tray tooltip · dark-mode menu · single-instance enforcement · persistent selection for unavailable devices · device priority.
+Windows-startup toggle · recording-device support · settings persistence · tray tooltip · dark-mode menu · single-instance enforcement · persistent selection for unavailable devices · device priority · keep devices awake.

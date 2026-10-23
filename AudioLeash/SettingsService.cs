@@ -213,6 +213,16 @@ public sealed class SettingsService
         });
     }
 
+    // ── Keep-alive devices ──────────────────────────────────────────────
+
+    /// <summary>Returns the playback devices with keep-alive enabled (sanitized); empty if none is saved.</summary>
+    public IReadOnlyList<RankedDevice> LoadKeepAliveDevices()
+        => Sanitize(LoadSettings()?.KeepAliveDevices);
+
+    /// <summary>Persists the keep-alive device list, preserving all other fields.</summary>
+    public void SaveKeepAliveDevices(IReadOnlyList<RankedDevice> list)
+        => SaveSettings((LoadSettings() ?? Empty) with { KeepAliveDevices = list });
+
     /// <summary>
     /// Drops entries with a null/empty Id, keeps the first occurrence of each Id,
     /// and replaces a null Name. JSON deserialization can yield nulls despite non-nullable types.
@@ -266,5 +276,6 @@ public sealed class SettingsService
         string? SelectedPlaybackDeviceName = null,
         string? SelectedCaptureDeviceName = null,
         IReadOnlyList<RankedDevice>? PlaybackPriority = null,
-        IReadOnlyList<RankedDevice>? CapturePriority = null);
+        IReadOnlyList<RankedDevice>? CapturePriority = null,
+        IReadOnlyList<RankedDevice>? KeepAliveDevices = null);
 }

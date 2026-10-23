@@ -397,4 +397,61 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.Equal("LG TV", list[0].Name);
         Assert.Equal("Unknown device", list[1].Name);
     }
+
+    // ── Keep-alive devices ──────────────────────────────────────────────
+
+    [Fact]
+    public void LoadKeepAliveDevices_WhenFileAbsent_ReturnsEmpty()
+    {
+        Assert.Empty(Svc().LoadKeepAliveDevices());
+    }
+
+    [Fact]
+    public void KeepAliveDevices_RoundTrip()
+    {
+        var svc = Svc();
+        svc.SaveKeepAliveDevices([new RankedDevice("id1", "HDMI", "NVIDIA")]);
+        Assert.Equal(new[] { new RankedDevice("id1", "HDMI", "NVIDIA") }, svc.LoadKeepAliveDevices());
+    }
+
+    [Fact]
+    public void SaveKeepAliveDevices_PreservesPriorityAndSelection()
+    {
+        var svc = Svc();
+        svc.SavePlaybackPriority([new RankedDevice("tv", "TV")]);
+        svc.SaveSelectedPlaybackDevice("spk", "Speakers");
+        svc.SaveKeepAliveDevices([new RankedDevice("tv", "TV")]);
+        Assert.Equal("tv", Assert.Single(svc.LoadPlaybackPriority()).Id);
+        Assert.Equal("spk", svc.LoadSelectedPlaybackDeviceId());
+        Assert.Equal("Speakers", svc.LoadSelectedPlaybackDeviceName());
+    }
+
+    [Fact]
+    public void SavePlaybackFlow_PreservesKeepAliveDevices()
+    {
+        var svc = Svc();
+        svc.SaveKeepAliveDevices([new RankedDevice("tv", "TV")]);
+        svc.SavePlaybackFlow([new RankedDevice("hp", "Headphones")], "hp", "Headphones");
+        Assert.Equal("tv", Assert.Single(svc.LoadKeepAliveDevices()).Id);
+    }
+
+    [Fact]
+    public void LoadKeepAliveDevices_FromOldFileWithoutField_ReturnsEmpty()
+    {
+        Directory.CreateDirectory(_tempDir);
+        File.WriteAllText(Path.Combine(_tempDir, "settings.json"),
+            """{ "selectedPlaybackDeviceId": "x" }""");
+        Assert.Empty(Svc().LoadKeepAliveDevices());
+    }
+
+    [Fact]
+    public void LoadKeepAliveDevices_DropsDuplicatesAndEmptyIds()
+    {
+        Directory.CreateDirectory(_tempDir);
+        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), """
+            { "keepAliveDevices": [
+                { "id": "tv", "name": "TV" }, { "id": "", "name": "x" }, { "id": "tv", "name": "dup" } ] }
+            """);
+        Assert.Equal("TV", Assert.Single(Svc().LoadKeepAliveDevices()).Name);
+    }
 }
