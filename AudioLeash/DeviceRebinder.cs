@@ -17,8 +17,10 @@ internal static class DeviceRebinder
     /// <summary>
     /// Returns <paramref name="saved"/> with each entry whose ID is absent from
     /// <paramref name="existingIds"/> replaced by an unclaimed candidate with the same name
-    /// (ignoring case) and description. A single connected match wins; failing that, a single
-    /// match of any state. Anything ambiguous is left alone. Order is preserved.
+    /// (ignoring case) and description. An entry with no recorded description (a saved pick)
+    /// matches on name alone: Windows friendly names already embed the adapter, e.g.
+    /// "LG TV (NVIDIA High Definition Audio)". A single connected match wins; failing that, a
+    /// single match of any state. Anything ambiguous is left alone. Order is preserved.
     /// </summary>
     /// <param name="existingIds">
     ///   Every endpoint ID Windows has for the flow in any state, NotPresent included: a USB
@@ -44,7 +46,8 @@ internal static class DeviceRebinder
             var matches = candidates
                 .Where(r => !claimed.Contains(r.Id)
                     && string.Equals(r.Name, d.Name, StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(r.Description, d.Description, StringComparison.OrdinalIgnoreCase))
+                    && (d.Description is null
+                        || string.Equals(r.Description, d.Description, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
             var connected = matches.Where(r => r.IsConnected).ToList();
             var match = connected.Count == 1 ? connected[0]

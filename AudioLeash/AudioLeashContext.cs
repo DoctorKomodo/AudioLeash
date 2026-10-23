@@ -163,10 +163,12 @@ public sealed class AudioLeashContext : ApplicationContext
             _keepAlive.State.SetEnabled(device, true);
 
         // Restore saved device selections (playback and capture).
-        string? savedPlaybackId = _settingsService.LoadSelectedPlaybackDeviceId();
-        string? savedCaptureId  = _settingsService.LoadSelectedCaptureDeviceId();
         _savedPlaybackDeviceName = _settingsService.LoadSelectedPlaybackDeviceName();
         _savedCaptureDeviceName  = _settingsService.LoadSelectedCaptureDeviceName();
+        string? savedPlaybackId = RebindSavedPick(
+            DataFlow.Render, _settingsService.LoadSelectedPlaybackDeviceId(), knownRender);
+        string? savedCaptureId = RebindSavedPick(
+            DataFlow.Capture, _settingsService.LoadSelectedCaptureDeviceId(), knownCapture);
         bool isFirstRun = savedPlaybackId is null && !_settingsService.HasSettingsFile;
 
         // Each flow starts in priority mode (ranked list configured) or legacy mode.
@@ -774,7 +776,34 @@ public sealed class AudioLeashContext : ApplicationContext
     }
 
     /// <summary>
-    /// Runs on the UI thread once device arrivals settle. Saved ranked and keep-alive entries
+    /// Re-binds the flow's saved pick (the legacy locked device, or the manual override in
+    /// priority mode) like a ranked entry, matching on its saved name, and persists it when it
+    /// moved. Returns the pick's current ID — <paramref name="pickId"/> when nothing changed.
+    /// </summary>
+    private string? RebindSavedPick(DataFlow flow, string? pickId, RebindDevices? devices)
+    {
+        string? name = flow == DataFlow.Render ? _savedPlaybackDeviceName : _savedCaptureDeviceName;
+        if (pickId is null || name is null) return pickId;
+
+        var rebound = RebindSaved([new RankedDevice(pickId, name)], devices, list =>
+        {
+            var pick = list[0];
+            if (flow == DataFlow.Render)
+            {
+                _savedPlaybackDeviceName = pick.Name;
+                _settingsService.SaveSelectedPlaybackDevice(pick.Id, pick.Name);
+            }
+            else
+            {
+                _savedCaptureDeviceName = pick.Name;
+                _settingsService.SaveSelectedCaptureDevice(pick.Id, pick.Name);
+            }
+        });
+        return rebound[0].Id;
+    }
+
+    /// <summary>
+    /// Runs on the UI thread once device arrivals settle. Saved ranked, pick and keep-alive entries
     /// whose endpoint was replaced while the app runs (e.g. a GPU driver update reinstalling
     /// HDMI audio) are moved to the new endpoint, then the affected flows are reconciled.
     /// Skipped while the settings window is open — it would save its stale IDs back on close —
@@ -794,10 +823,30 @@ public sealed class AudioLeashContext : ApplicationContext
             var after    = RebindSaved(before, known, flow == DataFlow.Render
                 ? _settingsService.SavePlaybackPriority
                 : _settingsService.SaveCapturePriority);
-            if (ReferenceEquals(before, after)) continue;
+            bool changed = !ReferenceEquals(before, after);
+            if (changed) priority.SetRanked(after);
 
-            priority.SetRanked(after);
-            ReconcileDeviceState(flow);
+            // The pick: the manual override in priority mode, the locked device otherwise.
+            var selection = SelectionFor(flow);
+            string? pickId = priority.IsPriorityMode ? priority.OverrideId : selection.SelectedDeviceId;
+            string? newPickId = RebindSavedPick(flow, pickId, known);
+            if (newPickId != pickId && newPickId is not null)
+            {
+                changed = true;
+                if (priority.IsPriorityMode)
+                {
+                    priority.StartOverride(newPickId);
+                }
+                else
+                {
+                    // Keep the notified availability, so the reconcile reports a reconnect.
+                    bool wasAvailable = selection.IsDeviceAvailable;
+                    selection.SelectDevice(newPickId);
+                    selection.SetDeviceAvailability(wasAvailable);
+                }
+            }
+
+            if (changed) ReconcileDeviceState(flow);
         }
 
         var enabledBefore = _keepAlive.State.Devices;

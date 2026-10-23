@@ -4,7 +4,7 @@
 
 ### Fixes
 
-- **Devices survive driver updates** — updating a driver (a GPU driver update reinstalls HDMI audio, for example) could make Windows treat a device as brand new, leaving your ranked or keep-awake entry stuck as **not connected** while the same device showed up unranked. AudioLeash now recognises the replacement by its name and moves your settings over to it automatically.
+- **Devices survive driver updates** — updating a driver (a GPU driver update reinstalls HDMI audio, for example) could make Windows treat a device as brand new, leaving your locked device, or ranked or keep-awake entry stuck as **not connected** while the same device showed up as new. AudioLeash now recognises the replacement by its name and moves your settings over to it automatically.
 
 ## v2.1.0
 

@@ -202,4 +202,46 @@ public class DeviceRebinderTests
         Assert.True(changed);
         Assert.Equal(["new", "old2"], result.Select(d => d.Id));
     }
+
+    [Fact]
+    public void Rebind_SavedDescriptionNotRecorded_MatchesOnNameAlone()
+    {
+        // A saved pick stores only the friendly name, which already embeds the description.
+        var result = Rebind([Saved("old", desc: null)], [Row("new", connected: true)], out bool changed);
+
+        Assert.True(changed);
+        Assert.Equal(Saved("new"), result[0]);
+    }
+
+    [Fact]
+    public void Rebind_SavedDescriptionNotRecorded_SeveralNameMatches_IsLeftAlone()
+    {
+        var result = Rebind(
+            [Saved("old", desc: null)],
+            [Row("a", connected: true), Row("b", connected: true, desc: "Other Driver")],
+            out bool changed);
+
+        Assert.False(changed);
+        Assert.Equal("old", result[0].Id);
+    }
+
+    [Fact]
+    public void Rebind_SavedDescriptionNotRecorded_PrefersTheSingleConnectedMatch()
+    {
+        var result = Rebind(
+            [Saved("old", desc: null)], [Row("stale", connected: false), Row("new", connected: true)],
+            out bool changed);
+
+        Assert.True(changed);
+        Assert.Equal("new", result[0].Id);
+    }
+
+    [Fact]
+    public void Rebind_SavedDescriptionNotRecorded_SingleDisconnectedMatch_TakesIt()
+    {
+        var result = Rebind([Saved("old", desc: null)], [Row("new", connected: false)], out bool changed);
+
+        Assert.True(changed);
+        Assert.Equal("new", result[0].Id);
+    }
 }
