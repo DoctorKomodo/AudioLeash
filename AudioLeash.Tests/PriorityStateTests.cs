@@ -13,6 +13,8 @@ public class PriorityStateTests
         return state;
     }
 
+    private static RankedDevice D(string id) => new(id, id + " name");
+
     private static HashSet<string> On(params string[] ids) => new(ids);
 
     [Fact]
@@ -94,7 +96,7 @@ public class PriorityStateTests
     {
         var s = Make("tv", "hp", "spk");
         s.Initialize(On("spk"));
-        s.StartOverride("spk");
+        s.StartOverride(D("spk"));
         var d = s.EvaluateSettled(On("tv", "hp", "spk"));
         Assert.Equal(PriorityOutcome.ReassertSilently, d.Outcome);
         Assert.Equal("spk", s.OverrideId);
@@ -105,7 +107,7 @@ public class PriorityStateTests
     {
         var s = Make("tv", "hp");
         s.Initialize(On("usb"));
-        s.StartOverride("usb");
+        s.StartOverride(D("usb"));
         var d = s.EvaluateSettled(On("usb", "tv"));
         Assert.Equal(PriorityOutcome.ReassertSilently, d.Outcome);
         Assert.Equal("usb", d.TargetId);
@@ -116,9 +118,9 @@ public class PriorityStateTests
     public void EvaluateSettled_OverrideDisconnects_EndsOverrideAndFallsBackToTop()
     {
         var s = Make("tv", "hp", "spk");
-        s.StartOverride("spk");
+        s.StartOverride(D("spk"));
         var d = s.EvaluateSettled(On("hp"));
-        Assert.Equal(new PriorityDecision(PriorityOutcome.OverrideEnded, "hp", "spk"), d);
+        Assert.Equal(new PriorityDecision(PriorityOutcome.OverrideEnded, "hp", "spk", D("spk")), d);
         Assert.Null(s.OverrideId);
         Assert.Equal("hp", s.TargetId);
     }
@@ -127,7 +129,7 @@ public class PriorityStateTests
     public void EvaluateSettled_OverrideAbsentDuringStartupGrace_KeepsOverride()
     {
         var s = Make("tv", "hp");
-        s.StartOverride("usb");
+        s.StartOverride(D("usb"));
         s.BeginStartupGrace();
         Assert.True(s.InStartupGrace);
 
@@ -139,14 +141,14 @@ public class PriorityStateTests
         s.EndStartupGrace();
         Assert.False(s.InStartupGrace);
         var d2 = s.EvaluateSettled(On("hp"));
-        Assert.Equal(new PriorityDecision(PriorityOutcome.OverrideEnded, "hp", "usb"), d2);
+        Assert.Equal(new PriorityDecision(PriorityOutcome.OverrideEnded, "hp", "usb", D("usb")), d2);
     }
 
     [Fact]
     public void ReturnToPriority_ClearsOverrideAndReturnsTop()
     {
         var s = Make("tv", "hp", "spk");
-        s.StartOverride("spk");
+        s.StartOverride(D("spk"));
         var top = s.ReturnToPriority(On("hp", "spk"));
         Assert.Equal("hp", top);
         Assert.Null(s.OverrideId);
@@ -157,7 +159,7 @@ public class PriorityStateTests
     public void ReturnToPriority_OverrideIsTopDevice_ReturnsSameTarget()
     {
         var s = Make("tv", "hp");
-        s.StartOverride("tv");
+        s.StartOverride(D("tv"));
         var top = s.ReturnToPriority(On("tv", "hp"));
         Assert.Equal("tv", top);
         Assert.Equal("tv", s.TargetId);
@@ -168,7 +170,7 @@ public class PriorityStateTests
     public void SetRanked_KeepsOverride()
     {
         var s = Make("tv", "hp");
-        s.StartOverride("hp");
+        s.StartOverride(D("hp"));
         s.SetRanked(new[] { new RankedDevice("spk", "spk") });
         Assert.Equal("hp", s.OverrideId);
         Assert.Equal("hp", s.TargetId);
@@ -233,7 +235,7 @@ public class PriorityStateTests
     public void EvaluateDefaultChange_NewDefaultOutranksOverride_RestoresOverride()
     {
         var s = Make("tv", "hp");
-        s.StartOverride("hp");
+        s.StartOverride(D("hp"));
         var d = s.EvaluateDefaultChange("tv", _ => true);
         Assert.Equal(new DefaultChangeDecision(RestoreDecision.Restore, "hp"), d);
     }
@@ -251,10 +253,41 @@ public class PriorityStateTests
     public void IsRelevant_TrueForRankedAndOverride()
     {
         var s = Make("tv");
-        s.StartOverride("usb");
+        s.StartOverride(D("usb"));
         Assert.True(s.IsRelevant("tv"));
         Assert.True(s.IsRelevant("usb"));
         Assert.False(s.IsRelevant("other"));
+    }
+
+    [Fact]
+    public void StartOverride_HoldsWholeDevice()
+    {
+        var s = Make("tv");
+        var device = new RankedDevice("usb", "USB name", "USB desc");
+        s.StartOverride(device);
+        Assert.Equal(device, s.Override);
+        Assert.Equal("usb", s.OverrideId);
+    }
+
+    [Fact]
+    public void EvaluateSettled_OverrideEnded_CarriesEndedOverride()
+    {
+        var s = Make("tv");
+        s.StartOverride(D("usb"));
+        var d = s.EvaluateSettled(On("tv"));
+        Assert.Equal(PriorityOutcome.OverrideEnded, d.Outcome);
+        Assert.Equal(D("usb"), d.EndedOverride);
+        Assert.Null(s.Override);
+    }
+
+    [Fact]
+    public void EvaluateSettled_OtherOutcomes_HaveNoEndedOverride()
+    {
+        var s = Make("tv", "hp");
+        s.Initialize(On("hp"));
+        var d = s.EvaluateSettled(On("tv", "hp"));
+        Assert.Equal(PriorityOutcome.SwitchedUp, d.Outcome);
+        Assert.Null(d.EndedOverride);
     }
 
     [Theory]

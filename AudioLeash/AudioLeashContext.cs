@@ -259,7 +259,7 @@ public sealed class AudioLeashContext : ApplicationContext
 
         if (savedId is not null)
         {
-            priority.StartOverride(savedId);
+            priority.StartOverride(new RankedDevice(savedId, SavedNameFor(flow) ?? "Unknown device"));
             priority.BeginStartupGrace();
             beganGrace = true;
         }
@@ -286,7 +286,7 @@ public sealed class AudioLeashContext : ApplicationContext
         bool available = active.Any(d => d.ID == savedId);
         foreach (var d in active) d.Dispose();
 
-        selection.SelectDevice(savedId);
+        selection.SelectDevice(new RankedDevice(savedId, SavedNameFor(flow) ?? "Unknown device"));
         selection.SetDeviceAvailability(available);
         return available;
     }
@@ -502,7 +502,7 @@ public sealed class AudioLeashContext : ApplicationContext
         var priority = PriorityFor(flow);
         if (priority.IsPriorityMode)
         {
-            PickPriorityDevice(flow, priority, device.ID, device.FriendlyName);
+            PickPriorityDevice(flow, priority, new RankedDevice(device.ID, device.FriendlyName, device.DeviceFriendlyName));
             return;
         }
 
@@ -516,7 +516,7 @@ public sealed class AudioLeashContext : ApplicationContext
             string deviceName = device.FriendlyName;
             _policyConfig.SetDefaultEndpoint(deviceId);
 
-            selection.SelectDevice(deviceId);
+            selection.SelectDevice(new RankedDevice(deviceId, deviceName, device.DeviceFriendlyName));
 
             if (flow == DataFlow.Render)
             {
@@ -554,14 +554,16 @@ public sealed class AudioLeashContext : ApplicationContext
     /// Priority-mode manual pick: the device becomes the override (and enforced target), the
     /// default is switched to it, and the pick is persisted so a restart keeps it.
     /// </summary>
-    private void PickPriorityDevice(DataFlow flow, PriorityState priority, string deviceId, string deviceName)
+    private void PickPriorityDevice(DataFlow flow, PriorityState priority, RankedDevice device)
     {
-        string? previousOverride = priority.OverrideId;
+        string deviceId   = device.Id;
+        string deviceName = device.Name;
+        var previousOverride = priority.Override;
         try
         {
             // Commit the override first so the default-change notification caused by the switch
             // below already matches the target; SetDefaultIfNeeded also raises IsInternalChange.
-            priority.StartOverride(deviceId);
+            priority.StartOverride(device);
             SetDefaultIfNeeded(flow, priority, deviceId);
         }
         catch (Exception ex)
@@ -780,6 +782,9 @@ public sealed class AudioLeashContext : ApplicationContext
     /// priority mode) like a ranked entry, matching on its saved name, and persists it when it
     /// moved. Returns the pick's current ID — <paramref name="pickId"/> when nothing changed.
     /// </summary>
+    private string? SavedNameFor(DataFlow flow)
+        => flow == DataFlow.Render ? _savedPlaybackDeviceName : _savedCaptureDeviceName;
+
     private string? RebindSavedPick(DataFlow flow, string? pickId, RebindDevices? devices)
     {
         string? name = flow == DataFlow.Render ? _savedPlaybackDeviceName : _savedCaptureDeviceName;
@@ -835,13 +840,13 @@ public sealed class AudioLeashContext : ApplicationContext
                 changed = true;
                 if (priority.IsPriorityMode)
                 {
-                    priority.StartOverride(newPickId);
+                    priority.StartOverride(new RankedDevice(newPickId, SavedNameFor(flow) ?? "Unknown device"));
                 }
                 else
                 {
                     // Keep the notified availability, so the reconcile reports a reconnect.
                     bool wasAvailable = selection.IsDeviceAvailable;
-                    selection.SelectDevice(newPickId);
+                    selection.SelectDevice(new RankedDevice(newPickId, SavedNameFor(flow) ?? "Unknown device"));
                     selection.SetDeviceAvailability(wasAvailable);
                 }
             }
@@ -950,7 +955,7 @@ public sealed class AudioLeashContext : ApplicationContext
                 // legacy mode) keeps its selection and availability as they are.
                 priority.SetRanked(newList);
                 priority.ReturnToPriority(active);
-                if (wasPriority && pick is not null) selection.SelectDevice(pick);
+                if (wasPriority && pick is not null) selection.SelectDevice(new RankedDevice(pick, pickName ?? "Unknown device"));
             }
         }
         catch (Exception ex)

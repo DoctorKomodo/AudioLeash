@@ -5,6 +5,18 @@ namespace AudioLeash.Tests;
 
 public class DeviceSelectionStateTests
 {
+    private static RankedDevice D(string id) => new(id, id + " name");
+
+    [Fact]
+    public void SelectDevice_HoldsWholeDevice()
+    {
+        var state = new DeviceSelectionState();
+        var device = new RankedDevice("a", "A name", "A desc");
+        state.SelectDevice(device);
+        Assert.Equal(device, state.SelectedDevice);
+        Assert.Equal("a", state.SelectedDeviceId);
+    }
+
     // ── EvaluateDefaultChange ────────────────────────────────────────────
 
     [Fact]
@@ -21,7 +33,7 @@ public class DeviceSelectionStateTests
     public void EvaluateDefaultChange_WhenIsInternalChange_ReturnsNoAction()
     {
         var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
+        state.SelectDevice(D("device-A"));
         state.IsInternalChange = true;
 
         var result = state.EvaluateDefaultChange(
@@ -35,7 +47,7 @@ public class DeviceSelectionStateTests
     public void EvaluateDefaultChange_WhenNewDefaultMatchesSelected_ReturnsNoAction()
     {
         var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
+        state.SelectDevice(D("device-A"));
 
         var result = state.EvaluateDefaultChange(
             newDefaultId: "device-A",
@@ -48,7 +60,7 @@ public class DeviceSelectionStateTests
     public void EvaluateDefaultChange_WhenExternalChangeAndDeviceAvailable_ReturnsRestore()
     {
         var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
+        state.SelectDevice(D("device-A"));
 
         var result = state.EvaluateDefaultChange(
             newDefaultId: "device-B",
@@ -61,7 +73,7 @@ public class DeviceSelectionStateTests
     public void EvaluateDefaultChange_WhenSelectedDeviceUnavailable_ReturnsSuspend()
     {
         var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
+        state.SelectDevice(D("device-A"));
 
         var result = state.EvaluateDefaultChange(
             newDefaultId: "device-B",
@@ -86,7 +98,7 @@ public class DeviceSelectionStateTests
     public void EvaluateSettledState_WhenSelectedDeviceBecomesAvailable_ReturnsReconnected()
     {
         var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
+        state.SelectDevice(D("device-A"));
         state.SetDeviceAvailability(false);
 
         var result = state.EvaluateSettledState(isAvailableNow: true);
@@ -99,7 +111,7 @@ public class DeviceSelectionStateTests
     public void EvaluateSettledState_WhenSelectedDeviceBecomesUnavailable_ReturnsDisconnected()
     {
         var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
+        state.SelectDevice(D("device-A"));
         // IsDeviceAvailable defaults to true via SelectDevice
 
         var result = state.EvaluateSettledState(isAvailableNow: false);
@@ -112,7 +124,7 @@ public class DeviceSelectionStateTests
     public void EvaluateSettledState_WhenStillAvailable_ReturnsReassertSilently()
     {
         var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
+        state.SelectDevice(D("device-A"));
         // Was available, settled available (a flap that recovered)
 
         var result = state.EvaluateSettledState(isAvailableNow: true);
@@ -125,7 +137,7 @@ public class DeviceSelectionStateTests
     public void EvaluateSettledState_WhenStillUnavailable_ReturnsNone()
     {
         var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
+        state.SelectDevice(D("device-A"));
         state.SetDeviceAvailability(false);
 
         var result = state.EvaluateSettledState(isAvailableNow: false);
@@ -141,7 +153,7 @@ public class DeviceSelectionStateTests
         // settled evaluation: the device was available before and is available after,
         // so the net outcome must be silent (no disconnect/reconnect notifications).
         var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
+        state.SelectDevice(D("device-A"));
 
         var result = state.EvaluateSettledState(isAvailableNow: true);
 
@@ -154,7 +166,7 @@ public class DeviceSelectionStateTests
     public void SelectDevice_StoresProvidedId()
     {
         var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
+        state.SelectDevice(D("device-A"));
         Assert.Equal("device-A", state.SelectedDeviceId);
     }
 
@@ -162,10 +174,10 @@ public class DeviceSelectionStateTests
     public void SelectDevice_SetsIsDeviceAvailableToTrue()
     {
         var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
+        state.SelectDevice(D("device-A"));
         state.SetDeviceAvailability(false);
 
-        state.SelectDevice("device-B");
+        state.SelectDevice(D("device-B"));
 
         Assert.True(state.IsDeviceAvailable);
     }
@@ -174,7 +186,7 @@ public class DeviceSelectionStateTests
     public void ClearSelection_NullsTheStoredId()
     {
         var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
+        state.SelectDevice(D("device-A"));
         state.ClearSelection();
         Assert.Null(state.SelectedDeviceId);
     }
@@ -183,7 +195,7 @@ public class DeviceSelectionStateTests
     public void ClearSelection_ResetsIsDeviceAvailableToTrue()
     {
         var state = new DeviceSelectionState();
-        state.SelectDevice("device-A");
+        state.SelectDevice(D("device-A"));
         state.SetDeviceAvailability(false);
 
         state.ClearSelection();
@@ -215,7 +227,7 @@ public class DeviceSelectionStateTests
     public void EvaluateDefaultChange_Snapshot_RestoreIdIsSelectionAtEvaluationTime()
     {
         var state = new DeviceSelectionState();
-        state.SelectDevice("A");
+        state.SelectDevice(D("A"));
 
         var result = state.EvaluateDefaultChange("B", id =>
         {
