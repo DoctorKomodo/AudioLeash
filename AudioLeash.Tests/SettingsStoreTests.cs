@@ -173,6 +173,33 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void Save_EmptySnapshotAfterUnusableLoad_LeavesFileAndWritesNoBackup()
+    {
+        WriteRaw("not json {");
+        var store = new SettingsStore(_dir);
+        store.Load();
+
+        store.Save(SettingsSnapshot.Empty);
+
+        Assert.Equal("not json {", File.ReadAllText(FilePath));
+        Assert.False(File.Exists(BakPath));
+    }
+
+    [Fact]
+    public void Save_NonEmptyAfterUnusableLoadAndEmptySave_StillBacksUpAndWrites()
+    {
+        WriteRaw("not json {");
+        var store = new SettingsStore(_dir);
+        store.Load();
+
+        store.Save(SettingsSnapshot.Empty);
+        store.Save(NonEmpty());
+
+        Assert.Equal("not json {", File.ReadAllText(BakPath));
+        Assert.Equal(SettingsFile.Serialize(NonEmpty()), File.ReadAllText(FilePath));
+    }
+
+    [Fact]
     public void Save_AfterUnusableLoad_BackupFails_WritesNothingAndRetriesNextSave()
     {
         WriteRaw("not json {");

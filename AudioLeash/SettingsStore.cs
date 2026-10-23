@@ -35,6 +35,8 @@ public sealed class SettingsStore
     // the first overwrite.
     private bool _backupPending;
 
+    private static readonly string EmptyJson = SettingsFile.Serialize(SettingsSnapshot.Empty);
+
     private string FilePath => Path.Combine(_directory, "settings.json");
     private string BackupPath => FilePath + ".bak";
 
@@ -97,6 +99,7 @@ public sealed class SettingsStore
     /// Writes the snapshot unless it serializes to what was last loaded or written. Best-effort:
     /// failures are swallowed. If the previous file was unusable it is copied to .bak first;
     /// when that copy fails nothing is written and the copy is retried on the next save.
+    /// An empty snapshot never replaces an unusable file: it is left alone until there is something to save.
     /// </summary>
     public void Save(SettingsSnapshot snapshot)
     {
@@ -104,6 +107,7 @@ public sealed class SettingsStore
         {
             var json = SettingsFile.Serialize(snapshot);
             if (json == _lastJson) return;
+            if (_backupPending && json == EmptyJson) return;
 
             if (_backupPending)
             {
